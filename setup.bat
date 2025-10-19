@@ -84,7 +84,7 @@ echo    - HEC_URL
 echo    - HEC_TOKEN
 echo    - SPLUNK_HOST
 echo    - SPLUNK_USERNAME
-echo    - SPLUNK_PASSWORD
+echo    - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)
 echo.
 echo 3. When ready, activate the virtual environment and run HEC-Yeah:
 echo    [32mvenv\Scripts\activate[0m
