@@ -4,7 +4,7 @@
 
 ```bash
 # macOS/Linux
-git clone <repo-url>
+git clone https://github.com/jleon757/HEC-Yeah.git
 cd HEC-Yeah
 ./setup.sh
 nano .env          # Edit with your credentials
@@ -12,7 +12,7 @@ nano .env          # Edit with your credentials
 
 ```cmd
 REM Windows
-git clone <repo-url>
+git clone https://github.com/jleon757/HEC-Yeah.git
 cd HEC-Yeah
 setup.bat
 notepad .env       REM Edit with your credentials

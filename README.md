@@ -48,7 +48,7 @@ HEC-Yeah performs comprehensive testing of your Splunk/Cribl HEC setup:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/HEC-Yeah.git
+git clone https://github.com/jleon757/HEC-Yeah.git
 cd HEC-Yeah
 ```
 
@@ -88,7 +88,7 @@ If you prefer to set up manually:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/HEC-Yeah.git
+git clone https://github.com/jleon757/HEC-Yeah.git
 cd HEC-Yeah
 ```
 
