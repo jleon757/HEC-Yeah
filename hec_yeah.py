@@ -116,6 +116,10 @@ class HECTester:
                     return response, None
                 else:
                     errors.append(f"Token authentication failed: HTTP {response.status_code}")
+            except requests.exceptions.Timeout:
+                errors.append("Token authentication timed out")
+            except requests.exceptions.ConnectionError as e:
+                errors.append(f"Token authentication connection failed: {str(e)}")
             except Exception as e:
                 errors.append(f"Token authentication error: {str(e)}")
 
@@ -136,6 +140,10 @@ class HECTester:
                     return response, None
                 else:
                     errors.append(f"Password authentication failed: HTTP {response.status_code}")
+            except requests.exceptions.Timeout:
+                errors.append("Password authentication timed out")
+            except requests.exceptions.ConnectionError as e:
+                errors.append(f"Password authentication connection failed: {str(e)}")
             except Exception as e:
                 errors.append(f"Password authentication error: {str(e)}")
 
@@ -144,6 +152,18 @@ class HECTester:
             error_msg = "No authentication credentials provided (need either SPLUNK_TOKEN or SPLUNK_PASSWORD)"
         else:
             error_msg = "All authentication methods failed: " + "; ".join(errors)
+
+            # Check if this looks like a Splunk Cloud connection timeout issue
+            if "splunkcloud.com" in url and ("timed out" in error_msg.lower() or "connection" in error_msg.lower()):
+                error_msg += (
+                    f"\n\n{Colors.YELLOW}SPLUNK CLOUD DETECTED:{Colors.END} "
+                    f"Connection to port 8089 timed out. "
+                    f"Splunk Cloud typically requires:\n"
+                    f"  1. Network allowlisting for management port access, OR\n"
+                    f"  2. Using the Splunk Cloud API endpoint instead\n"
+                    f"  3. Verify SPLUNK_HOST is correct for your Splunk Cloud instance\n"
+                    f"  See: https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ManageSplunkCloud"
+                )
 
         return None, error_msg
 

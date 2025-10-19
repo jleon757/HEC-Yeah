@@ -327,6 +327,30 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 - Verify no data filtering or routing rules are dropping events
 - Check if the index specified in DEFAULT_INDEX exists
 
+### "Connection timed out" or "Max retries exceeded" (Splunk Cloud)
+
+**Issue**: Port 8089 connection timeout when using Splunk Cloud
+
+**Solution**: Splunk Cloud restricts direct access to port 8089 (management port). You have several options:
+
+1. **Request network allowlisting** (recommended for production):
+   - Contact Splunk Cloud support to allowlist your IP address for port 8089 access
+   - See: [Splunk Cloud Network Security](https://docs.splunk.com/Documentation/SplunkCloud)
+
+2. **Verify your SPLUNK_HOST URL**:
+   - For Splunk Cloud, use: `https://your-instance.splunkcloud.com:8089`
+   - Make sure you're using the correct cloud instance URL
+
+3. **Check firewall/network settings**:
+   - Ensure your network allows outbound HTTPS on port 8089
+   - Test connectivity: `curl -v https://your-instance.splunkcloud.com:8089`
+
+4. **Alternative for limited access environments**:
+   - Some Splunk Cloud deployments may require VPN or bastion host access
+   - Contact your Splunk Cloud administrator
+
+**Note**: HEC (port 8088) and Search API (port 8089) have different network requirements in Splunk Cloud.
+
 ## Security Notes
 
 - Store sensitive credentials in `.env` file (never commit to git)
