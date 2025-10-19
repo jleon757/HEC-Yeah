@@ -47,7 +47,7 @@ python hec_yeah.py --wait-time 20
 # Test specific index
 python hec_yeah.py --index myindex
 
-# Override all settings via command line
+# Override all settings via command line (password auth)
 python hec_yeah.py \
   --hec-url https://splunk.example.com:8088/services/collector \
   --hec-token ABC123... \
@@ -56,6 +56,15 @@ python hec_yeah.py \
   --splunk-password pass123 \
   --num-events 10 \
   --wait-time 15
+
+# Override all settings via command line (token auth - preferred)
+python hec_yeah.py \
+  --hec-url https://splunk.example.com:8088/services/collector \
+  --hec-token ABC123... \
+  --splunk-host https://splunk.example.com:8089 \
+  --splunk-username admin \
+  --splunk-token XYZ789... \
+  --num-events 10
 
 # Show help
 python hec_yeah.py --help
@@ -68,7 +77,10 @@ HEC_URL=https://your-splunk:8088/services/collector
 HEC_TOKEN=your-hec-token-here
 SPLUNK_HOST=https://your-splunk:8089
 SPLUNK_USERNAME=your-username
-SPLUNK_PASSWORD=your-password
+
+# Authentication: Use EITHER token (preferred) OR password
+SPLUNK_TOKEN=your-bearer-token     # Preferred
+SPLUNK_PASSWORD=your-password      # Fallback
 ```
 
 ## Optional .env Variables
@@ -77,6 +89,18 @@ SPLUNK_PASSWORD=your-password
 DEFAULT_INDEX=main        # Leave empty for default
 NUM_EVENTS=5             # Default is 5
 ```
+
+## Authentication Methods
+
+**Token Authentication (Preferred):**
+- More secure, no password exposure
+- Set `SPLUNK_TOKEN` in .env
+- Tool tries token first if both are provided
+
+**Password Authentication:**
+- Traditional username/password
+- Set `SPLUNK_PASSWORD` in .env
+- Used if token not provided or token fails
 
 ## Exit Codes
 

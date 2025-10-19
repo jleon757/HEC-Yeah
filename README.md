@@ -121,6 +121,9 @@ HEC_TOKEN=your-hec-token-here
 # Splunk Search API Configuration
 SPLUNK_HOST=https://your-splunk-instance:8089
 SPLUNK_USERNAME=your-search-username
+
+# Authentication: Use either token OR password (token is preferred)
+SPLUNK_TOKEN=your-splunk-bearer-token-here
 SPLUNK_PASSWORD=your-search-password
 
 # Optional: Override default index (leave empty for default)
@@ -136,9 +139,12 @@ NUM_EVENTS=5
 - **HEC_TOKEN**: Your HEC authentication token
 - **SPLUNK_HOST**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
 - **SPLUNK_USERNAME**: Username with search privileges
-- **SPLUNK_PASSWORD**: Password for the search user
+- **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
+- **SPLUNK_PASSWORD**: (Optional) Password for the search user - used if SPLUNK_TOKEN not provided
 - **DEFAULT_INDEX**: (Optional) Target index name - if not specified, uses Splunk default
 - **NUM_EVENTS**: (Optional) Number of test events to send (default: 5)
+
+**Note:** You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
 
 ## Usage
 
@@ -153,6 +159,7 @@ python hec_yeah.py
 
 Override `.env` settings with command-line arguments:
 
+**Using password authentication:**
 ```bash
 python hec_yeah.py \
   --hec-url https://splunk.example.com:8088/services/collector \
@@ -164,13 +171,25 @@ python hec_yeah.py \
   --wait-time 15
 ```
 
+**Using token authentication (preferred):**
+```bash
+python hec_yeah.py \
+  --hec-url https://splunk.example.com:8088/services/collector \
+  --hec-token your-hec-token \
+  --splunk-host https://splunk.example.com:8089 \
+  --splunk-username admin \
+  --splunk-token your-bearer-token \
+  --num-events 10
+```
+
 ### Available Arguments
 
 - `--hec-url`: HEC endpoint URL (overrides .env)
 - `--hec-token`: HEC token (overrides .env)
 - `--splunk-host`: Splunk host URL for search API (overrides .env)
 - `--splunk-username`: Splunk username (overrides .env)
-- `--splunk-password`: Splunk password (overrides .env)
+- `--splunk-token`: Splunk bearer token for authentication (overrides .env)
+- `--splunk-password`: Splunk password for authentication (overrides .env)
 - `--index`: Target index (overrides .env)
 - `--num-events`: Number of test events to send (default: 5)
 - `--wait-time`: Seconds to wait before searching (default: 10)

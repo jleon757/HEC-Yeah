@@ -34,17 +34,20 @@ class HECTester:
     """Main class for testing HEC connectivity and event delivery"""
 
     def __init__(self, hec_url: str, hec_token: str, splunk_host: str,
-                 splunk_username: str, splunk_password: str,
+                 splunk_username: str, splunk_password: Optional[str] = None,
+                 splunk_token: Optional[str] = None,
                  default_index: Optional[str] = None, num_events: int = 5):
         self.hec_url = hec_url
         self.hec_token = hec_token
         self.splunk_host = splunk_host
         self.splunk_username = splunk_username
         self.splunk_password = splunk_password
+        self.splunk_token = splunk_token
         self.default_index = default_index
         self.num_events = num_events
         self.test_id = str(uuid.uuid4())
         self.session = self._create_session()
+        self.auth_method = None  # Track which auth method succeeded
 
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry logic"""
@@ -73,6 +76,76 @@ class HECTester:
             return False, f"DNS resolution failed for {hostname}: {str(e)}"
         except Exception as e:
             return False, f"Error parsing URL: {str(e)}"
+
+    def _get_auth_headers(self, use_token: bool = True):
+        """
+        Get authentication headers or credentials for Splunk API.
+        Returns tuple of (headers_dict, auth_tuple, auth_type_string)
+        """
+        if use_token and self.splunk_token:
+            # Token-based authentication
+            headers = {'Authorization': f'Bearer {self.splunk_token}'}
+            return headers, None, "token"
+        elif self.splunk_password:
+            # Basic authentication
+            return {}, (self.splunk_username, self.splunk_password), "password"
+        else:
+            return {}, None, None
+
+    def _make_authenticated_request(self, method: str, url: str, **kwargs):
+        """
+        Make an authenticated request to Splunk API with fallback logic.
+        Tries token first (if available), then falls back to password.
+        """
+        errors = []
+
+        # Try token authentication first if available
+        if self.splunk_token:
+            headers, auth, auth_type = self._get_auth_headers(use_token=True)
+            request_kwargs = kwargs.copy()
+            if headers:
+                request_kwargs['headers'] = {**request_kwargs.get('headers', {}), **headers}
+            if auth:
+                request_kwargs['auth'] = auth
+
+            try:
+                response = getattr(self.session, method)(url, **request_kwargs)
+                if response.status_code not in [401, 403]:  # Auth succeeded or different error
+                    if self.auth_method is None:
+                        self.auth_method = "token"
+                    return response, None
+                else:
+                    errors.append(f"Token authentication failed: HTTP {response.status_code}")
+            except Exception as e:
+                errors.append(f"Token authentication error: {str(e)}")
+
+        # Fall back to password authentication if available
+        if self.splunk_password:
+            headers, auth, auth_type = self._get_auth_headers(use_token=False)
+            request_kwargs = kwargs.copy()
+            if headers:
+                request_kwargs['headers'] = {**request_kwargs.get('headers', {}), **headers}
+            if auth:
+                request_kwargs['auth'] = auth
+
+            try:
+                response = getattr(self.session, method)(url, **request_kwargs)
+                if response.status_code not in [401, 403]:  # Auth succeeded or different error
+                    if self.auth_method is None:
+                        self.auth_method = "password"
+                    return response, None
+                else:
+                    errors.append(f"Password authentication failed: HTTP {response.status_code}")
+            except Exception as e:
+                errors.append(f"Password authentication error: {str(e)}")
+
+        # Both methods failed or none available
+        if not self.splunk_token and not self.splunk_password:
+            error_msg = "No authentication credentials provided (need either SPLUNK_TOKEN or SPLUNK_PASSWORD)"
+        else:
+            error_msg = "All authentication methods failed: " + "; ".join(errors)
+
+        return None, error_msg
 
     def _test_hec_connectivity(self) -> Tuple[bool, Optional[str]]:
         """Test basic connectivity to HEC endpoint"""
@@ -203,17 +276,20 @@ class HECTester:
         search_url = f"{self.splunk_host}/services/search/jobs"
 
         try:
-            # Create search job
-            response = self.session.post(
+            # Create search job with authentication
+            response, auth_error = self._make_authenticated_request(
+                'post',
                 search_url,
-                auth=(self.splunk_username, self.splunk_password),
                 data={'search': search_query, 'output_mode': 'json'},
                 verify=False,
                 timeout=30
             )
 
+            if response is None:
+                return False, f"Search API Authentication Failed: {auth_error}", None
+
             if response.status_code == 401:
-                return False, "Search API Authentication Failed: Invalid username or password", None
+                return False, "Search API Authentication Failed: Invalid credentials", None
             elif response.status_code == 403:
                 return False, "Search API Authorization Failed: User does not have permission to run searches", None
             elif response.status_code != 201:
@@ -229,13 +305,16 @@ class HECTester:
             elapsed = 0
 
             while elapsed < max_wait:
-                response = self.session.get(
+                response, auth_error = self._make_authenticated_request(
+                    'get',
                     job_url,
-                    auth=(self.splunk_username, self.splunk_password),
                     params={'output_mode': 'json'},
                     verify=False,
                     timeout=10
                 )
+
+                if response is None:
+                    return False, f"Error checking search job status: {auth_error}", None
 
                 if response.status_code != 200:
                     return False, f"Error checking search job status: HTTP {response.status_code}", None
@@ -253,13 +332,16 @@ class HECTester:
 
             # Get search results
             results_url = f"{self.splunk_host}/services/search/jobs/{job_sid}/results"
-            response = self.session.get(
+            response, auth_error = self._make_authenticated_request(
+                'get',
                 results_url,
-                auth=(self.splunk_username, self.splunk_password),
                 params={'output_mode': 'json'},
                 verify=False,
                 timeout=30
             )
+
+            if response is None:
+                return False, f"Error retrieving search results: {auth_error}", None
 
             if response.status_code != 200:
                 return False, f"Error retrieving search results: HTTP {response.status_code}", None
@@ -286,14 +368,17 @@ class HECTester:
         search_url = f"{self.splunk_host}/services/search/jobs"
 
         try:
-            # Create search job
-            response = self.session.post(
+            # Create search job with authentication
+            response, auth_error = self._make_authenticated_request(
+                'post',
                 search_url,
-                auth=(self.splunk_username, self.splunk_password),
                 data={'search': search_query, 'output_mode': 'json'},
                 verify=False,
                 timeout=30
             )
+
+            if response is None:
+                return False, f"Failed to create detail search job: {auth_error}", None
 
             if response.status_code != 201:
                 return False, f"Failed to create detail search job: HTTP {response.status_code}", None
@@ -306,13 +391,16 @@ class HECTester:
             elapsed = 0
 
             while elapsed < max_wait:
-                response = self.session.get(
+                response, auth_error = self._make_authenticated_request(
+                    'get',
                     job_url,
-                    auth=(self.splunk_username, self.splunk_password),
                     params={'output_mode': 'json'},
                     verify=False,
                     timeout=10
                 )
+
+                if response is None:
+                    return False, f"Error checking detail search status: {auth_error}", None
 
                 if response.status_code != 200:
                     return False, f"Error checking detail search status: HTTP {response.status_code}", None
@@ -327,13 +415,16 @@ class HECTester:
 
             # Get results
             results_url = f"{self.splunk_host}/services/search/jobs/{job_sid}/results"
-            response = self.session.get(
+            response, auth_error = self._make_authenticated_request(
+                'get',
                 results_url,
-                auth=(self.splunk_username, self.splunk_password),
                 params={'output_mode': 'json'},
                 verify=False,
                 timeout=30
             )
+
+            if response is None:
+                return False, f"Error retrieving detail results: {auth_error}", None
 
             if response.status_code != 200:
                 return False, f"Error retrieving detail results: HTTP {response.status_code}", None
@@ -446,7 +537,8 @@ def main():
     parser.add_argument('--hec-token', help='HEC token (overrides .env)')
     parser.add_argument('--splunk-host', help='Splunk host URL for search API (overrides .env)')
     parser.add_argument('--splunk-username', help='Splunk username (overrides .env)')
-    parser.add_argument('--splunk-password', help='Splunk password (overrides .env)')
+    parser.add_argument('--splunk-token', help='Splunk bearer token for auth (overrides .env)')
+    parser.add_argument('--splunk-password', help='Splunk password for auth (overrides .env)')
     parser.add_argument('--index', help='Target index (overrides .env)')
     parser.add_argument('--num-events', type=int, help='Number of test events to send (default: 5)')
     parser.add_argument('--wait-time', type=int, default=10, help='Seconds to wait before searching (default: 10)')
@@ -458,6 +550,7 @@ def main():
     hec_token = args.hec_token or os.getenv('HEC_TOKEN')
     splunk_host = args.splunk_host or os.getenv('SPLUNK_HOST')
     splunk_username = args.splunk_username or os.getenv('SPLUNK_USERNAME')
+    splunk_token = args.splunk_token or os.getenv('SPLUNK_TOKEN')
     splunk_password = args.splunk_password or os.getenv('SPLUNK_PASSWORD')
     default_index = args.index or os.getenv('DEFAULT_INDEX')
     num_events = args.num_events or int(os.getenv('NUM_EVENTS', '5'))
@@ -479,8 +572,9 @@ def main():
         print(f"{Colors.RED}Error: SPLUNK_USERNAME not provided. Set in .env or use --splunk-username{Colors.END}")
         sys.exit(1)
 
-    if not splunk_password:
-        print(f"{Colors.RED}Error: SPLUNK_PASSWORD not provided. Set in .env or use --splunk-password{Colors.END}")
+    if not splunk_token and not splunk_password:
+        print(f"{Colors.RED}Error: Either SPLUNK_TOKEN or SPLUNK_PASSWORD must be provided{Colors.END}")
+        print(f"{Colors.YELLOW}Set in .env or use --splunk-token or --splunk-password{Colors.END}")
         sys.exit(1)
 
     # Suppress SSL warnings (in production, use proper SSL verification)
@@ -493,7 +587,8 @@ def main():
         hec_token=hec_token,
         splunk_host=splunk_host,
         splunk_username=splunk_username,
-        splunk_password=splunk_password,
+        splunk_password=splunk_password if splunk_password else None,
+        splunk_token=splunk_token if splunk_token else None,
         default_index=default_index if default_index else None,
         num_events=num_events
     )
