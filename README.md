@@ -314,6 +314,12 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 - Windows CMD: `venv\Scripts\activate.bat`
 - Windows PowerShell: `venv\Scripts\Activate.ps1`
 
+**urllib3/OpenSSL warning on macOS**
+- If you see: `NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+`
+- This warning has been fixed in the latest version
+- Run the setup script again or manually install: `pip install 'urllib3>=1.26.0,<2.0.0'`
+- The warning doesn't affect functionality but has been resolved for a cleaner experience
+
 ### Runtime Issues
 
 **"DNS resolution failed"**

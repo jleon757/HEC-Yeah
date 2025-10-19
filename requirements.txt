@@ -1,2 +1,3 @@
 requests>=2.31.0
 python-dotenv>=1.0.0
+urllib3>=1.26.0,<2.0.0  # Pin to v1.x to avoid OpenSSL warning on macOS/LibreSSL
