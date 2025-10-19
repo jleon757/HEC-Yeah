@@ -155,15 +155,31 @@ class HECTester:
 
             # Check if this looks like a Splunk Cloud connection timeout issue
             if "splunkcloud.com" in url and ("timed out" in error_msg.lower() or "connection" in error_msg.lower()):
-                error_msg += (
-                    f"\n\n{Colors.YELLOW}SPLUNK CLOUD DETECTED:{Colors.END} "
-                    f"Connection to port 8089 timed out. "
-                    f"Splunk Cloud typically requires:\n"
-                    f"  1. Network allowlisting for management port access, OR\n"
-                    f"  2. Using the Splunk Cloud API endpoint instead\n"
-                    f"  3. Verify SPLUNK_HOST is correct for your Splunk Cloud instance\n"
-                    f"  See: https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ManageSplunkCloud"
-                )
+                # Check if this is a Splunk Cloud free trial (prd-p-*)
+                if "prd-p-" in url:
+                    error_msg += (
+                        f"\n\n{Colors.RED}SPLUNK CLOUD FREE TRIAL DETECTED:{Colors.END} "
+                        f"Connection to port 8089 timed out.\n\n"
+                        f"{Colors.YELLOW}⚠️  IMPORTANT:{Colors.END} Splunk Cloud FREE TRIAL environments do NOT support "
+                        f"REST API access on port 8089.\n"
+                        f"The Search API is disabled in trial environments, so event verification is not possible.\n\n"
+                        f"Your options:\n"
+                        f"  1. Upgrade to a paid Splunk Cloud instance (enables full API access)\n"
+                        f"  2. Use a self-hosted Splunk Enterprise instance for testing\n"
+                        f"  3. Verify HEC events were received by manually checking Splunk Web UI\n\n"
+                        f"Note: HEC events WERE sent successfully (if no HEC errors above).\n"
+                        f"Only the verification step via Search API is blocked in trial environments."
+                    )
+                else:
+                    error_msg += (
+                        f"\n\n{Colors.YELLOW}SPLUNK CLOUD DETECTED:{Colors.END} "
+                        f"Connection to port 8089 timed out. "
+                        f"Splunk Cloud typically requires:\n"
+                        f"  1. Network allowlisting for management port access, OR\n"
+                        f"  2. Using the Splunk Cloud API endpoint instead\n"
+                        f"  3. Verify SPLUNK_HOST is correct for your Splunk Cloud instance\n"
+                        f"  See: https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ManageSplunkCloud"
+                    )
 
         return None, error_msg
 

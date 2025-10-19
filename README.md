@@ -115,19 +115,21 @@ Edit the `.env` file with your Splunk/Cribl configuration:
 
 ```bash
 # Splunk HEC Configuration
-HEC_URL=https://your-splunk-instance:8088/services/collector
-HEC_TOKEN=your-hec-token-here
+# Note: Quotes are optional but recommended for values with special characters
+HEC_URL="https://your-splunk-instance:8088/services/collector"
+HEC_TOKEN="your-hec-token-here"
 
 # Splunk Search API Configuration
-SPLUNK_HOST=https://your-splunk-instance:8089
-SPLUNK_USERNAME=your-search-username
+SPLUNK_HOST="https://your-splunk-instance:8089"
+SPLUNK_USERNAME="your-search-username"
 
 # Authentication: Use either token OR password (token is preferred)
-SPLUNK_TOKEN=your-splunk-bearer-token-here
-SPLUNK_PASSWORD=your-search-password
+# Use quotes if your password/token contains special characters (!@#$%^&* etc)
+SPLUNK_TOKEN="your-splunk-bearer-token-here"
+SPLUNK_PASSWORD="your-search-password"
 
 # Optional: Override default index (leave empty for default)
-DEFAULT_INDEX=
+DEFAULT_INDEX=""
 
 # Optional: Number of test events to send (default: 5)
 NUM_EVENTS=5
@@ -144,16 +146,28 @@ NUM_EVENTS=5
 - **DEFAULT_INDEX**: (Optional) Target index name - if not specified, uses Splunk default
 - **NUM_EVENTS**: (Optional) Number of test events to send (default: 5)
 
-**Note:** You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
+**Important Notes:**
+- You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
+- **Quotes in .env**: Use double quotes around values that contain special characters (e.g., `!@#$%^&*`)
+- **After editing .env**: You do NOT need to reactivate the virtual environment - just run `python hec_yeah.py` again. The tool reloads `.env` on each run.
 
 ## Usage
 
 ### Basic Usage
 
-Run with configuration from `.env`:
+**First, activate the virtual environment** (do this once per terminal session):
+```bash
+source venv/bin/activate  # On macOS/Linux
+# OR
+venv\Scripts\activate     # On Windows
+```
+
+**Then run the tool** with configuration from `.env`:
 ```bash
 python hec_yeah.py
 ```
+
+**Note**: You only need to activate the venv once per terminal session. After editing `.env`, just run `python hec_yeah.py` again - no need to reactivate.
 
 ### Command-Line Arguments
 
@@ -330,6 +344,27 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 ### "Connection timed out" or "Max retries exceeded" (Splunk Cloud)
 
 **Issue**: Port 8089 connection timeout when using Splunk Cloud
+
+#### Splunk Cloud FREE TRIAL Environments
+
+**⚠️ IMPORTANT**: If your SPLUNK_HOST URL contains `prd-p-` (e.g., `prd-p-px0tj.splunkcloud.com`), you are using a **FREE TRIAL** environment.
+
+**Free trial limitations**:
+- REST API access on port 8089 is **DISABLED** in trial environments
+- Event verification via Search API will **ALWAYS FAIL**
+- HEC events can still be sent successfully (port 8088 works)
+- You can manually verify events in Splunk Web UI
+
+**Your options**:
+1. **Upgrade to paid Splunk Cloud** (enables full API access)
+2. **Use Splunk Enterprise** (self-hosted) for full testing capability
+3. **Manual verification**: Check Splunk Web UI to confirm events arrived
+   - Search: `index=* test_id="<your-test-id>"`
+   - The test ID is shown when events are sent
+
+**Note**: If you see HEC events sent successfully (green checkmarks), the tool IS working correctly. Only the automated verification step is blocked in trial environments.
+
+#### Splunk Cloud Paid/Production Environments
 
 **Solution**: Splunk Cloud restricts direct access to port 8089 (management port). You have several options:
 
