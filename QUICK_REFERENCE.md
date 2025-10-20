@@ -96,11 +96,13 @@ NUM_EVENTS=5             # Default is 5
 - More secure, no password exposure
 - Set `SPLUNK_TOKEN` in .env
 - Tool tries token first if both are provided
+- **REQUIRED for SAML/SSO environments**
 
 **Password Authentication:**
 - Traditional username/password
 - Set `SPLUNK_PASSWORD` in .env
 - Used if token not provided or token fails
+- **Does NOT work with SAML/SSO** - use token instead
 
 ## Exit Codes
 

@@ -1,10 +1,10 @@
 # HEC-Yeah
 
-A Python tool that tests HTTP Event Collector (HEC) tokens and validates end-to-end event delivery to Splunk or Cribl.
+A Python tool that tests HTTP Event Collector (HEC) tokens and validates end-to-end event delivery to Splunk.
 
 ## What It Does
 
-HEC-Yeah performs comprehensive testing of your Splunk/Cribl HEC setup:
+HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
 
 1. **Connectivity Testing** - Validates HEC endpoint accessibility with detailed error detection:
    - DNS resolution checks
@@ -71,7 +71,7 @@ The setup script will automatically:
 - Copy `.env.example` to `.env`
 - Make the script executable (macOS/Linux)
 
-3. Edit the `.env` file with your Splunk/Cribl credentials:
+3. Edit the `.env` file with your Splunk credentials:
 ```bash
 nano .env  # or use your preferred editor
 ```
@@ -106,12 +106,12 @@ pip install -r requirements.txt
 4. Configure your environment:
 ```bash
 cp .env.example .env
-# Edit .env with your Splunk/Cribl credentials
+# Edit .env with your Splunk credentials
 ```
 
 ## Configuration
 
-Edit the `.env` file with your Splunk/Cribl configuration:
+Edit the `.env` file with your Splunk configuration:
 
 ```bash
 # Splunk HEC Configuration
@@ -148,6 +148,7 @@ NUM_EVENTS=5
 
 **Important Notes:**
 - You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
+- **SAML/SSO Environments**: If your Splunk instance uses SAML or Single Sign-On (SSO) authentication, password authentication will NOT work. You MUST use a user token (`SPLUNK_TOKEN`) instead. Generate a token in Splunk: Settings → Tokens → Create New Token.
 - **Quotes in .env**: Use double quotes around values that contain special characters (e.g., `!@#$%^&*`)
 - **After editing .env**: You do NOT need to reactivate the virtual environment - just run `python hec_yeah.py` again. The tool reloads `.env` on each run.
 

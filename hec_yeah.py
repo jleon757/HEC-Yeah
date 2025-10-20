@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HEC-Yeah: A tool to test HEC tokens and connectivity to Splunk/Cribl
+HEC-Yeah: A tool to test HEC tokens and connectivity to Splunk
 """
 
 import os
@@ -567,7 +567,7 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description='HEC-Yeah: Test HEC tokens and connectivity to Splunk/Cribl'
+        description='HEC-Yeah: Test HEC tokens and connectivity to Splunk'
     )
     parser.add_argument('--hec-url', help='HEC endpoint URL (overrides .env)')
     parser.add_argument('--hec-token', help='HEC token (overrides .env)')

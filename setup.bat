@@ -76,7 +76,7 @@ echo ============================================================
 echo.
 
 echo [33mNext Steps:[0m
-echo 1. Edit the .env file with your Splunk/Cribl configuration:
+echo 1. Edit the .env file with your Splunk configuration:
 echo    notepad .env
 echo.
 echo 2. Configure the following required values in .env:
@@ -85,6 +85,7 @@ echo    - HEC_TOKEN
 echo    - SPLUNK_HOST
 echo    - SPLUNK_USERNAME
 echo    - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)
+echo    [33mNote: If using SAML/SSO, you MUST use SPLUNK_TOKEN[0m
 echo.
 echo 3. When ready, activate the virtual environment and run HEC-Yeah:
 echo    [32mvenv\Scripts\activate[0m
