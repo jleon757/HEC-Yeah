@@ -98,7 +98,7 @@ echo -e "   ${YELLOW}Generate API credentials in Cribl: Settings → API Credent
 echo -e "   ${BOLD}For Splunk testing (TEST_TARGET=splunk or both):${NC}"
 echo -e "   - SPLUNK_HEC_URL"
 echo -e "   - SPLUNK_HEC_TOKEN"
-echo -e "   - SPLUNK_HOST"
+echo -e "   - SPLUNK_HTTP_URL"
 echo -e "   - SPLUNK_USERNAME"
 echo -e "   - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)"
 echo -e "   ${YELLOW}Note: If using SAML/SSO, you MUST use SPLUNK_TOKEN${NC}\n"

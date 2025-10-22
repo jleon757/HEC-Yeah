@@ -72,10 +72,10 @@ python hec_yeah.py --target both
 
 # Override Cribl settings via command line
 python hec_yeah.py --target cribl \
-  --cribl-http-url http://cribl.example.com:10080 \
-  --cribl-api-url https://cribl.example.com:9000/api/v1 \
-  --cribl-client-id my-client-id \
-  --cribl-client-secret my-secret \
+  --cribl-http-url https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector \
+  --cribl-api-url https://api.cribl.cloud \
+  --cribl-client-id your-client-id-here \
+  --cribl-client-secret your-client-secret-here \
   --num-events 10
 ```
 
@@ -98,7 +98,7 @@ TEST_TARGET=splunk    # Options: splunk, cribl, both
 # Splunk HEC endpoint - this token is tested for event ingestion
 SPLUNK_HEC_URL=https://your-splunk:8088/services/collector
 SPLUNK_HEC_TOKEN=your-hec-token-here
-SPLUNK_HOST=https://your-splunk:8089
+SPLUNK_HTTP_URL=https://your-splunk:8089
 SPLUNK_USERNAME=your-username
 
 # Authentication: Use EITHER token (preferred) OR password
@@ -109,10 +109,10 @@ SPLUNK_PASSWORD=your-password      # Fallback
 ### For Cribl Testing (when TEST_TARGET=cribl or both)
 ```bash
 # Cribl HTTP Source endpoint
-CRIBL_HTTP_URL=http://your-cribl:10080
-CRIBL_API_URL=https://your-cribl:9000/api/v1
-CRIBL_CLIENT_ID=your-client-id
-CRIBL_CLIENT_SECRET=your-client-secret
+CRIBL_HTTP_URL=https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector
+CRIBL_API_URL=https://api.cribl.cloud
+CRIBL_CLIENT_ID=your-client-id-here
+CRIBL_CLIENT_SECRET=your-client-secret-here
 ```
 
 ## Optional .env Variables

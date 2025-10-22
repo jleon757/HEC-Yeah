@@ -179,7 +179,7 @@ SPLUNK_HEC_URL="https://your-splunk-instance:8088/services/collector"
 SPLUNK_HEC_TOKEN="your-hec-token-here"
 
 # Splunk Search API Configuration
-SPLUNK_HOST="https://your-splunk-instance:8089"
+SPLUNK_HTTP_URL="https://your-splunk-instance:8089"
 SPLUNK_USERNAME="your-search-username"
 
 # Authentication: Use either token OR password (token is preferred)
@@ -204,7 +204,7 @@ NUM_EVENTS=5
 
 - **SPLUNK_HEC_URL**: Splunk HEC endpoint URL (e.g., `https://splunk.example.com:8088/services/collector`) - this token is tested for event ingestion
 - **SPLUNK_HEC_TOKEN**: HEC authentication token - this token is tested to verify it can send events to Splunk
-- **SPLUNK_HOST**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
+- **SPLUNK_HTTP_URL**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
 - **SPLUNK_USERNAME**: Username with search privileges
 - **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
 - **SPLUNK_PASSWORD**: (Optional) Password for the search user - used if SPLUNK_TOKEN not provided
@@ -212,9 +212,9 @@ NUM_EVENTS=5
 
 #### Cribl Configuration (Required if TEST_TARGET=cribl or both)
 
-- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080` or `https://in.main-default-xxxxx.cribl.cloud` for Cribl Cloud)
+- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
 - **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
-- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://cribl.example.com:9000/api/v1`)
+- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://api.cribl.cloud` for Cribl Cloud or `https://cribl.example.com:9000/api/v1` for self-hosted)
 - **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
 - **CRIBL_CLIENT_SECRET**: API client secret
 - **CRIBL_WORKER_GROUP**: (Optional) Worker group to check logs (default: `default`)
@@ -325,10 +325,10 @@ python hec_yeah.py --target both
 **Override Cribl Settings:**
 ```bash
 python hec_yeah.py --target cribl \
-  --cribl-http-url http://cribl.example.com:10080 \
-  --cribl-api-url https://cribl.example.com:9000/api/v1 \
-  --cribl-client-id "my-client-id" \
-  --cribl-client-secret "my-secret" \
+  --cribl-http-url https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector \
+  --cribl-api-url https://api.cribl.cloud \
+  --cribl-client-id "your-client-id-here" \
+  --cribl-client-secret "your-client-secret-here" \
   --num-events 10
 ```
 
@@ -447,7 +447,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 ### Runtime Issues
 
 **"DNS resolution failed"**
-- Verify the hostname in SPLUNK_HEC_URL or SPLUNK_HOST is correct
+- Verify the hostname in SPLUNK_HEC_URL or SPLUNK_HTTP_URL is correct
 - Check network connectivity
 - Verify DNS is configured correctly
 
@@ -477,7 +477,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 
 #### Splunk Cloud FREE TRIAL Environments
 
-**⚠️ IMPORTANT**: If your SPLUNK_HOST URL contains `prd-p-` (e.g., `prd-p-px0tj.splunkcloud.com`), you are using a **FREE TRIAL** environment.
+**⚠️ IMPORTANT**: If your SPLUNK_HTTP_URL contains `prd-p-` (e.g., `prd-p-px0tj.splunkcloud.com`), you are using a **FREE TRIAL** environment.
 
 **Free trial limitations**:
 - REST API access on port 8089 is **DISABLED** in trial environments
@@ -502,7 +502,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
    - Contact Splunk Cloud support to allowlist your IP address for port 8089 access
    - See: [Splunk Cloud Network Security](https://docs.splunk.com/Documentation/SplunkCloud)
 
-2. **Verify your SPLUNK_HOST URL**:
+2. **Verify your SPLUNK_HTTP_URL**:
    - For Splunk Cloud, use: `https://your-instance.splunkcloud.com:8089`
    - Make sure you're using the correct cloud instance URL
 
@@ -542,7 +542,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 - Check that HTTP Source is enabled in Cribl (Sources → HTTP)
 - Ensure firewall allows connections to HTTP Source port (typically 10080)
 - If using token auth (`CRIBL_HEC_TOKEN`), verify token is configured correctly in HTTP Source settings
-- Test HTTP Source manually: `curl -X POST http://cribl.example.com:10080 -d '{"test":"data"}'`
+- Test HTTP Source manually: `curl -X POST http://cribl.example.com:<port>/services/collector -d '{"test":"data"}'`
 
 **"Could not find relevant log file"**
 - Check if Cribl is using non-standard log file names

@@ -96,7 +96,7 @@ echo.
 echo    For Splunk testing (TEST_TARGET=splunk or both):
 echo    - SPLUNK_HEC_URL
 echo    - SPLUNK_HEC_TOKEN
-echo    - SPLUNK_HOST
+echo    - SPLUNK_HTTP_URL
 echo    - SPLUNK_USERNAME
 echo    - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)
 echo    [33mNote: If using SAML/SSO, you MUST use SPLUNK_TOKEN[0m

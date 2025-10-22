@@ -183,7 +183,7 @@ class HECTester:
                         f"Splunk Cloud typically requires:\n"
                         f"  1. Network allowlisting for management port access, OR\n"
                         f"  2. Using the Splunk Cloud API endpoint instead\n"
-                        f"  3. Verify SPLUNK_HOST is correct for your Splunk Cloud instance\n"
+                        f"  3. Verify SPLUNK_HTTP_URL is correct for your Splunk Cloud instance\n"
                         f"  See: https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ManageSplunkCloud"
                     )
 
@@ -1141,7 +1141,7 @@ def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: 
         if not hec_token:
             errors.append("SPLUNK_HEC_TOKEN not provided (required for Splunk testing)")
         if not splunk_host:
-            errors.append("SPLUNK_HOST not provided (required for Splunk testing)")
+            errors.append("SPLUNK_HTTP_URL not provided (required for Splunk testing)")
         if not splunk_username:
             errors.append("SPLUNK_USERNAME not provided (required for Splunk testing)")
         if not splunk_token and not splunk_password:
@@ -1217,7 +1217,7 @@ def main():
     # Splunk configuration
     hec_url = args.hec_url or os.getenv('SPLUNK_HEC_URL') or os.getenv('HEC_URL')  # Backward compatibility
     hec_token = args.hec_token or os.getenv('SPLUNK_HEC_TOKEN') or os.getenv('HEC_TOKEN')  # Backward compatibility
-    splunk_host = args.splunk_host or os.getenv('SPLUNK_HOST')
+    splunk_host = args.splunk_host or os.getenv('SPLUNK_HTTP_URL') or os.getenv('SPLUNK_HOST')  # Backward compatibility
     splunk_username = args.splunk_username or os.getenv('SPLUNK_USERNAME')
     splunk_token = args.splunk_token or os.getenv('SPLUNK_TOKEN')
     splunk_password = args.splunk_password or os.getenv('SPLUNK_PASSWORD')
