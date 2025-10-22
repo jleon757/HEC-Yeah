@@ -13,16 +13,19 @@ HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
    - Token authentication
    - Permission validation
 
-2. **Event Delivery** - Sends test events with unique identifiers:
-   - Configurable number of events (default: 5)
+2. **Event Delivery** - Tests BOTH HEC endpoints:
+   - `/services/collector` (Event endpoint - structured JSON)
+   - `/services/collector/raw` (Raw endpoint - JSON as raw data)
+   - Sends configurable number of events to each (default: 5 per endpoint)
    - UUID-based test run identification
-   - Structured JSON events with metadata
+   - Separate tracking for each endpoint type
 
 3. **Event Verification** - Searches Splunk to confirm event receipt:
-   - Validates all events were indexed
-   - Reports index and sourcetype information
+   - Validates all events were indexed for both endpoints
+   - Reports index and sourcetype information per endpoint
    - Captures first and last event timestamps
    - Calculates indexing lag (_indextime - _time)
+   - Separate results display for Event vs Raw endpoints
 
 4. **Detailed Error Reporting** - Provides specific diagnostics:
    - DNS resolution failures
