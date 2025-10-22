@@ -713,13 +713,15 @@ class CriblTester:
                 from urllib.parse import urlparse
                 parsed = urlparse(http_url)
                 hostname = parsed.hostname or ''
-                # Split by dots and get first part (workspace name)
+                # Split by dots: e.g., default.main.happy-elgamal-foi6wsh.cribl.cloud
                 parts = hostname.split('.')
                 if len(parts) > 0 and parts[-2] == 'cribl' and parts[-1] == 'cloud':
                     self.cribl_workspace = parts[0]
-                    # For system logs API, use the workspace URL (without port)
-                    # e.g., https://default.main.happy-elgamal-foi6wsh.cribl.cloud
-                    self.cribl_logs_api_base = f"{parsed.scheme}://{hostname}"
+                    # For REST API, remove workspace prefix from hostname
+                    # HEC: default.main.happy-elgamal-foi6wsh.cribl.cloud:10080
+                    # API: main.happy-elgamal-foi6wsh.cribl.cloud (no workspace prefix, no port)
+                    api_hostname = '.'.join(parts[1:])  # Remove first part (workspace)
+                    self.cribl_logs_api_base = f"{parsed.scheme}://{api_hostname}"
                     print(f"{Colors.YELLOW}Detected Cribl Cloud workspace: {self.cribl_workspace}{Colors.END}")
                     print(f"{Colors.YELLOW}Using logs API base: {self.cribl_logs_api_base}{Colors.END}")
             except Exception as e:
