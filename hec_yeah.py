@@ -1000,19 +1000,38 @@ class CriblTester:
 
         response, error = self._make_api_request('GET', endpoint)
 
+        # Debug output
+        print(f"\n{Colors.YELLOW}DEBUG: Get log files{Colors.END}")
+        print(f"  API URL: {self.api_url}")
+        print(f"  Endpoint: {endpoint}")
+        print(f"  Full URL: {self.api_url}{endpoint}")
+        print(f"  Is Cribl Cloud: {self.is_cribl_cloud}")
+        print(f"  Worker Group: {self.worker_group}")
+
         if error:
+            print(f"  {Colors.RED}Request error: {error}{Colors.END}")
             return False, error, []
 
+        print(f"  Response status: {response.status_code}")
+
         if response.status_code != 200:
+            print(f"  {Colors.RED}Response body: {response.text[:500]}{Colors.END}")
             return False, f"Failed to get log files: HTTP {response.status_code}", []
 
         try:
             data = response.json()
+            print(f"  Response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+            print(f"  Response (first 500 chars): {str(data)[:500]}")
+
             # Response format may vary - typically returns array of log file objects
             # Each object has: { filename, size, mtime, id, ... }
             log_files = data.get('items', []) or data.get('logs', []) or data
+            print(f"  Log files found: {len(log_files) if isinstance(log_files, list) else 'not a list'}")
+            if isinstance(log_files, list) and len(log_files) > 0:
+                print(f"  First log file: {log_files[0]}")
             return True, None, log_files
         except Exception as e:
+            print(f"  {Colors.RED}Parse error: {str(e)}{Colors.END}")
             return False, f"Error parsing log files response: {str(e)}", []
 
     def get_log_file_content(self, log_file_id: str) -> Tuple[bool, Optional[str], str]:
@@ -1043,13 +1062,25 @@ class CriblTester:
 
         response, error = self._make_api_request('GET', endpoint)
 
+        # Debug output
+        print(f"\n{Colors.YELLOW}DEBUG: Get log file content{Colors.END}")
+        print(f"  Log file ID: {log_file_id}")
+        print(f"  Endpoint: {endpoint}")
+        print(f"  Full URL: {self.api_url}{endpoint}")
+
         if error:
+            print(f"  {Colors.RED}Request error: {error}{Colors.END}")
             return False, error, ""
 
+        print(f"  Response status: {response.status_code}")
+
         if response.status_code != 200:
+            print(f"  {Colors.RED}Response body: {response.text[:500]}{Colors.END}")
             return False, f"Failed to get log content: HTTP {response.status_code}", ""
 
         # Log content is typically returned as text
+        print(f"  Content length: {len(response.text)} characters")
+        print(f"  Content preview (first 500 chars): {response.text[:500]}")
         return True, None, response.text
 
     def find_relevant_log_file(self, log_files: List[Dict]) -> Optional[str]:
