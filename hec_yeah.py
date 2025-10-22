@@ -715,14 +715,24 @@ class CriblTester:
     def _authenticate(self) -> Tuple[bool, Optional[str]]:
         """
         Authenticate to Cribl API using client credentials.
+        Tries multiple authentication methods to support different Cribl configurations.
         Stores access token for subsequent requests.
 
         Returns:
             (success, error_message)
         """
+        # Normalize the auth URL - ensure it doesn't have duplicate /api/v1
+        if '/api/v1' in self.api_url:
+            base_url = self.api_url.split('/api/v1')[0]
+        else:
+            base_url = self.api_url.rstrip('/')
+
+        auth_errors = []
+
         try:
-            # Cribl authentication endpoint: POST /auth/login
-            auth_url = f"{self.api_url}/auth/login"
+            # Method 1: Direct username/password authentication (most common for Cribl)
+            # The client_id is often the username and client_secret is the password
+            auth_url = f"{base_url}/api/v1/auth/login"
 
             payload = {
                 "username": self.client_id,
@@ -738,17 +748,57 @@ class CriblTester:
 
             if response.status_code == 200:
                 data = response.json()
-                self.access_token = data.get('token')
-                # Cribl tokens typically expire in 1 hour
-                self.token_expiry = time.time() + 3600
-                return True, None
+                self.access_token = data.get('token') or data.get('access_token')
+                if self.access_token:
+                    self.token_expiry = time.time() + 3600
+                    return True, None
+                else:
+                    auth_errors.append(f"Method 1: Success but no token in response: {data}")
             else:
-                return False, f"Authentication failed: HTTP {response.status_code} - {response.text}"
+                auth_errors.append(f"Method 1 (username/password JSON): HTTP {response.status_code} - {response.text}")
 
         except requests.exceptions.Timeout:
-            return False, "Authentication request timed out"
+            auth_errors.append("Method 1: Request timed out")
         except Exception as e:
-            return False, f"Authentication error: {str(e)}"
+            auth_errors.append(f"Method 1: {str(e)}")
+
+        try:
+            # Method 2: OAuth2 client credentials flow with form data
+            auth_url = f"{base_url}/api/v1/auth/login"
+
+            payload = {
+                "grant_type": "client_credentials",
+                "client_id": self.client_id,
+                "client_secret": self.client_secret
+            }
+
+            response = self.session.post(
+                auth_url,
+                data=payload,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=10,
+                verify=False
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                self.access_token = data.get('access_token') or data.get('token')
+                if self.access_token:
+                    self.token_expiry = time.time() + 3600
+                    return True, None
+                else:
+                    auth_errors.append(f"Method 2: Success but no token in response: {data}")
+            else:
+                auth_errors.append(f"Method 2 (OAuth2 form-encoded): HTTP {response.status_code} - {response.text}")
+
+        except requests.exceptions.Timeout:
+            auth_errors.append("Method 2: Request timed out")
+        except Exception as e:
+            auth_errors.append(f"Method 2: {str(e)}")
+
+        # All methods failed
+        error_details = "\n  ".join(auth_errors)
+        return False, f"All authentication methods failed:\n  {error_details}\n\nPlease verify:\n  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n  2. Credentials have not been revoked in Cribl UI\n  3. CRIBL_API_URL is correct (should end with /api/v1)"
 
     def _ensure_authenticated(self) -> Tuple[bool, Optional[str]]:
         """Ensure we have a valid access token"""
