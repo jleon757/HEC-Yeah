@@ -76,10 +76,24 @@ echo ============================================================
 echo.
 
 echo [33mNext Steps:[0m
-echo 1. Edit the .env file with your Splunk configuration:
+echo 1. Edit the .env file with your configuration:
 echo    notepad .env
 echo.
-echo 2. Configure the following required values in .env:
+echo 2. Set TEST_TARGET in .env:
+echo    - cribl - Test Cribl only
+echo    - splunk - Test Splunk only (default)
+echo    - both - Test both Cribl and Splunk
+echo.
+echo 3. Configure required values based on your testing target:
+echo.
+echo    For Cribl testing (TEST_TARGET=cribl or both):
+echo    - CRIBL_HTTP_URL
+echo    - CRIBL_API_URL
+echo    - CRIBL_CLIENT_ID
+echo    - CRIBL_CLIENT_SECRET
+echo    [33mGenerate API credentials in Cribl: Settings → API Credentials[0m
+echo.
+echo    For Splunk testing (TEST_TARGET=splunk or both):
 echo    - HEC_URL
 echo    - HEC_TOKEN
 echo    - SPLUNK_HOST
@@ -87,7 +101,7 @@ echo    - SPLUNK_USERNAME
 echo    - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)
 echo    [33mNote: If using SAML/SSO, you MUST use SPLUNK_TOKEN[0m
 echo.
-echo 3. When ready, activate the virtual environment and run HEC-Yeah:
+echo 4. When ready, activate the virtual environment and run HEC-Yeah:
 echo    [32mvenv\Scripts\activate[0m
 echo    [32mpython hec_yeah.py[0m
 echo.

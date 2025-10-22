@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HEC-Yeah: A tool to test HEC tokens and connectivity to Splunk
+HEC-Yeah: A tool to test HEC tokens and connectivity to Cribl and Splunk
 """
 
 import os
@@ -669,14 +669,444 @@ class HECTester:
             print(f"    Avg Index Lag:  {avg_lag:.2f} seconds")
 
 
+class CriblTester:
+    """Class for testing Cribl HTTP Source and verifying via internal logs"""
+
+    def __init__(self, http_url: str, http_token: Optional[str],
+                 api_url: str, client_id: str, client_secret: str,
+                 worker_group: str = 'default', num_events: int = 5):
+        """
+        Initialize Cribl tester
+
+        Args:
+            http_url: Cribl HTTP Source endpoint URL
+            http_token: Optional auth token for HTTP Source
+            api_url: Cribl REST API base URL
+            client_id: API client ID
+            client_secret: API client secret
+            worker_group: Worker group to check logs for
+            num_events: Number of test events to send
+        """
+        self.http_url = http_url
+        self.http_token = http_token
+        self.api_url = api_url
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.worker_group = worker_group
+        self.num_events = num_events
+        self.test_id = str(uuid.uuid4())
+        self.session = self._create_session()
+        self.access_token = None
+        self.token_expiry = None
+
+    def _create_session(self) -> requests.Session:
+        """Create requests session with retry logic"""
+        session = requests.Session()
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        return session
+
+    def _authenticate(self) -> Tuple[bool, Optional[str]]:
+        """
+        Authenticate to Cribl API using client credentials.
+        Stores access token for subsequent requests.
+
+        Returns:
+            (success, error_message)
+        """
+        try:
+            # Cribl authentication endpoint: POST /auth/login
+            auth_url = f"{self.api_url}/auth/login"
+
+            payload = {
+                "username": self.client_id,
+                "password": self.client_secret
+            }
+
+            response = self.session.post(
+                auth_url,
+                json=payload,
+                timeout=10,
+                verify=False
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                self.access_token = data.get('token')
+                # Cribl tokens typically expire in 1 hour
+                self.token_expiry = time.time() + 3600
+                return True, None
+            else:
+                return False, f"Authentication failed: HTTP {response.status_code} - {response.text}"
+
+        except requests.exceptions.Timeout:
+            return False, "Authentication request timed out"
+        except Exception as e:
+            return False, f"Authentication error: {str(e)}"
+
+    def _ensure_authenticated(self) -> Tuple[bool, Optional[str]]:
+        """Ensure we have a valid access token"""
+        if not self.access_token or (self.token_expiry and time.time() >= self.token_expiry):
+            return self._authenticate()
+        return True, None
+
+    def _make_api_request(self, method: str, endpoint: str, **kwargs) -> Tuple[Optional[requests.Response], Optional[str]]:
+        """
+        Make authenticated request to Cribl API
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint path (e.g., '/system/logs')
+            **kwargs: Additional arguments for requests
+
+        Returns:
+            (response, error_message)
+        """
+        # Ensure authenticated
+        success, error = self._ensure_authenticated()
+        if not success:
+            return None, error
+
+        # Prepare headers
+        headers = kwargs.pop('headers', {})
+        headers['Authorization'] = f'Bearer {self.access_token}'
+        headers['Content-Type'] = 'application/json'
+
+        # Make request
+        url = f"{self.api_url}{endpoint}"
+        try:
+            response = self.session.request(
+                method,
+                url,
+                headers=headers,
+                timeout=30,
+                verify=False,
+                **kwargs
+            )
+            return response, None
+        except requests.exceptions.Timeout:
+            return None, f"Request to {endpoint} timed out"
+        except Exception as e:
+            return None, f"Request error: {str(e)}"
+
+    def generate_test_events(self) -> List[Dict]:
+        """Generate test events for Cribl"""
+        events = []
+        current_time = time.time()
+
+        for i in range(self.num_events):
+            event = {
+                "test_id": self.test_id,
+                "tool": "hec-yeah",
+                "target": "cribl",
+                "event_number": i + 1,
+                "total_events": self.num_events,
+                "message": f"HEC-Yeah test event {i+1} of {self.num_events} (target: cribl)",
+                "timestamp": datetime.fromtimestamp(current_time + i).isoformat(),
+                "_time": current_time + i
+            }
+            events.append(event)
+
+        return events
+
+    def send_events(self, events: List[Dict]) -> Tuple[bool, Optional[str], int]:
+        """
+        Send events to Cribl HTTP Source
+
+        Returns:
+            (success, error_message, num_sent)
+        """
+        print(f"\n{Colors.BLUE}Sending {len(events)} events to Cribl HTTP Source...{Colors.END}")
+
+        sent_count = 0
+        headers = {'Content-Type': 'application/json'}
+
+        # Add auth token if provided
+        if self.http_token:
+            headers['Authorization'] = f'Bearer {self.http_token}'
+
+        for i, event in enumerate(events, 1):
+            try:
+                response = self.session.post(
+                    self.http_url,
+                    json=event,
+                    headers=headers,
+                    timeout=10,
+                    verify=False
+                )
+
+                if response.status_code in [200, 201, 204]:
+                    print(f"  {Colors.GREEN}✓{Colors.END} Event {i}/{len(events)} sent successfully")
+                    sent_count += 1
+                else:
+                    print(f"  {Colors.RED}✗{Colors.END} Event {i}/{len(events)} failed: HTTP {response.status_code}")
+                    return False, f"Event {i} failed with HTTP {response.status_code}: {response.text}", sent_count
+
+            except requests.exceptions.Timeout:
+                return False, f"Event {i} timed out", sent_count
+            except Exception as e:
+                return False, f"Event {i} error: {str(e)}", sent_count
+
+        print(f"{Colors.GREEN}✓ All {sent_count} events sent successfully{Colors.END}")
+        return True, None, sent_count
+
+    def get_log_files(self) -> Tuple[bool, Optional[str], List[Dict]]:
+        """
+        Get list of internal log files from Cribl
+
+        Returns:
+            (success, error_message, log_files_list)
+        """
+        # Cribl API endpoint for logs: GET /system/logs
+        # This may vary - might be /m/{worker_group}/system/logs for distributed
+        if self.worker_group and self.worker_group != 'default':
+            endpoint = f"/m/{self.worker_group}/system/logs"
+        else:
+            endpoint = "/system/logs"
+
+        response, error = self._make_api_request('GET', endpoint)
+
+        if error:
+            return False, error, []
+
+        if response.status_code != 200:
+            return False, f"Failed to get log files: HTTP {response.status_code}", []
+
+        try:
+            data = response.json()
+            # Response format may vary - typically returns array of log file objects
+            # Each object has: { filename, size, mtime, id, ... }
+            log_files = data.get('items', []) or data.get('logs', []) or data
+            return True, None, log_files
+        except Exception as e:
+            return False, f"Error parsing log files response: {str(e)}", []
+
+    def get_log_file_content(self, log_file_id: str) -> Tuple[bool, Optional[str], str]:
+        """
+        Retrieve content of specific log file
+
+        Args:
+            log_file_id: Log file identifier
+
+        Returns:
+            (success, error_message, log_content)
+        """
+        # Endpoint: GET /system/logs/{id}
+        if self.worker_group and self.worker_group != 'default':
+            endpoint = f"/m/{self.worker_group}/system/logs/{log_file_id}"
+        else:
+            endpoint = f"/system/logs/{log_file_id}"
+
+        response, error = self._make_api_request('GET', endpoint)
+
+        if error:
+            return False, error, ""
+
+        if response.status_code != 200:
+            return False, f"Failed to get log content: HTTP {response.status_code}", ""
+
+        # Log content is typically returned as text
+        return True, None, response.text
+
+    def find_relevant_log_file(self, log_files: List[Dict]) -> Optional[str]:
+        """
+        Find the most recent/relevant log file to check for events.
+        Typically cribl.log or the most recent log file.
+
+        Args:
+            log_files: List of log file objects
+
+        Returns:
+            log_file_id or None
+        """
+        if not log_files:
+            return None
+
+        # Look for cribl.log first (main log file)
+        for log in log_files:
+            filename = log.get('filename', '') or log.get('name', '')
+            if 'cribl.log' in filename.lower() and '.gz' not in filename:
+                return log.get('id') or log.get('filename')
+
+        # Fall back to most recent log file
+        # Sort by modification time (mtime) descending
+        sorted_logs = sorted(
+            log_files,
+            key=lambda x: x.get('mtime', 0) or x.get('modified', 0),
+            reverse=True
+        )
+
+        if sorted_logs:
+            return sorted_logs[0].get('id') or sorted_logs[0].get('filename')
+
+        return None
+
+    def verify_events_in_logs(self) -> Tuple[bool, Optional[str], Dict]:
+        """
+        Verify that test events appear in Cribl internal logs
+
+        Returns:
+            (success, error_message, results_dict)
+        """
+        print(f"\n{Colors.BLUE}Verifying events in Cribl internal logs...{Colors.END}")
+
+        # Step 1: Get list of log files
+        success, error, log_files = self.get_log_files()
+        if not success:
+            return False, f"Failed to get log files: {error}", {}
+
+        print(f"  Found {len(log_files)} log files")
+
+        # Step 2: Find relevant log file
+        log_file_id = self.find_relevant_log_file(log_files)
+        if not log_file_id:
+            return False, "Could not find relevant log file", {}
+
+        print(f"  Checking log file: {log_file_id}")
+
+        # Step 3: Get log file content
+        success, error, log_content = self.get_log_file_content(log_file_id)
+        if not success:
+            return False, f"Failed to get log content: {error}", {}
+
+        # Step 4: Search for test_id in log content
+        # Count occurrences of our test_id
+        occurrences = log_content.count(self.test_id)
+
+        results = {
+            'log_file': log_file_id,
+            'test_id': self.test_id,
+            'occurrences': occurrences,
+            'expected': self.num_events,
+            'found': occurrences >= self.num_events
+        }
+
+        if occurrences >= self.num_events:
+            print(f"{Colors.GREEN}✓ Found {occurrences} references to test ID in logs{Colors.END}")
+            return True, None, results
+        else:
+            print(f"{Colors.YELLOW}⚠ Found {occurrences} references, expected at least {self.num_events}{Colors.END}")
+            return False, f"Only found {occurrences} event references in logs", results
+
+    def run_test(self) -> bool:
+        """Run complete Cribl test workflow"""
+        print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"{Colors.BOLD}Cribl HTTP Source & Log Verification Test{Colors.END}")
+        print(f"{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"Test ID: {self.test_id}")
+
+        # Step 1: Authenticate to API
+        print(f"\n{Colors.BLUE}Authenticating to Cribl API...{Colors.END}")
+        success, error = self._authenticate()
+        if not success:
+            print(f"{Colors.RED}✗ Authentication failed: {error}{Colors.END}")
+            return False
+        print(f"{Colors.GREEN}✓ Authentication successful{Colors.END}")
+
+        # Step 2: Generate and send events
+        events = self.generate_test_events()
+        success, error, sent_count = self.send_events(events)
+        if not success:
+            print(f"{Colors.RED}✗ Event sending failed: {error}{Colors.END}")
+            return False
+
+        # Step 3: Wait for events to be processed
+        wait_time = 10
+        print(f"\n{Colors.YELLOW}Waiting {wait_time} seconds for events to be processed...{Colors.END}")
+        time.sleep(wait_time)
+
+        # Step 4: Verify events in logs
+        success, error, results = self.verify_events_in_logs()
+
+        # Step 5: Display results
+        print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"{Colors.BOLD}TEST RESULTS - CRIBL{Colors.END}")
+        print(f"{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"Test ID: {self.test_id}")
+
+        if success:
+            print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
+            print(f"  Sent: {sent_count}/{self.num_events} events")
+            print(f"  Found: {results.get('occurrences', 0)} references in logs")
+            print(f"  Log file: {results.get('log_file', 'N/A')}")
+            return True
+        else:
+            print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠ TEST PARTIALLY SUCCESSFUL{Colors.END}")
+            print(f"  Sent: {sent_count}/{self.num_events} events")
+            print(f"  Found: {results.get('occurrences', 0)} references in logs")
+            print(f"  Log file: {results.get('log_file', 'N/A')}")
+            print(f"\n{Colors.YELLOW}Note: Events were sent successfully but verification incomplete{Colors.END}")
+            print(f"{Colors.YELLOW}{error}{Colors.END}")
+            return False
+
+
+def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: Optional[str],
+                          splunk_host: Optional[str], splunk_username: Optional[str],
+                          splunk_token: Optional[str], splunk_password: Optional[str],
+                          cribl_http_url: Optional[str], cribl_api_url: Optional[str],
+                          cribl_client_id: Optional[str], cribl_client_secret: Optional[str]) -> Tuple[bool, Optional[str]]:
+    """
+    Validate configuration based on test target.
+    Returns (is_valid, error_message)
+    """
+    errors = []
+
+    # Validate target value
+    if test_target not in ['splunk', 'cribl', 'both']:
+        errors.append(f"Invalid TEST_TARGET: '{test_target}'. Must be 'splunk', 'cribl', or 'both'")
+        return False, '\n'.join(errors)
+
+    # Validate Splunk configuration if needed
+    if test_target in ['splunk', 'both']:
+        if not hec_url:
+            errors.append("HEC_URL not provided (required for Splunk testing)")
+        if not hec_token:
+            errors.append("HEC_TOKEN not provided (required for Splunk testing)")
+        if not splunk_host:
+            errors.append("SPLUNK_HOST not provided (required for Splunk testing)")
+        if not splunk_username:
+            errors.append("SPLUNK_USERNAME not provided (required for Splunk testing)")
+        if not splunk_token and not splunk_password:
+            errors.append("Either SPLUNK_TOKEN or SPLUNK_PASSWORD must be provided (required for Splunk testing)")
+
+    # Validate Cribl configuration if needed
+    if test_target in ['cribl', 'both']:
+        if not cribl_http_url:
+            errors.append("CRIBL_HTTP_URL not provided (required for Cribl testing)")
+        if not cribl_api_url:
+            errors.append("CRIBL_API_URL not provided (required for Cribl testing)")
+        if not cribl_client_id:
+            errors.append("CRIBL_CLIENT_ID not provided (required for Cribl testing)")
+        if not cribl_client_secret:
+            errors.append("CRIBL_CLIENT_SECRET not provided (required for Cribl testing)")
+
+    if errors:
+        return False, '\n'.join(errors)
+
+    return True, None
+
+
 def main():
     """Main entry point"""
     # Load environment variables
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description='HEC-Yeah: Test HEC tokens and connectivity to Splunk'
+        description='HEC-Yeah: Test HEC tokens and connectivity to Cribl and/or Splunk'
     )
+
+    # Target selection
+    parser.add_argument('--target',
+                        choices=['splunk', 'cribl', 'both'],
+                        help='Target system to test: cribl, splunk, or both (overrides .env)')
+
+    # Splunk arguments
     parser.add_argument('--hec-url', help='HEC endpoint URL (overrides .env)')
     parser.add_argument('--hec-token', help='HEC token (overrides .env)')
     parser.add_argument('--splunk-host', help='Splunk host URL for search API (overrides .env)')
@@ -684,12 +1114,35 @@ def main():
     parser.add_argument('--splunk-token', help='Splunk bearer token for auth (overrides .env)')
     parser.add_argument('--splunk-password', help='Splunk password for auth (overrides .env)')
     parser.add_argument('--index', help='Target index (overrides .env)')
+
+    # Cribl HTTP Source arguments
+    parser.add_argument('--cribl-http-url',
+                        help='Cribl HTTP Source endpoint URL (overrides .env)')
+    parser.add_argument('--cribl-http-token',
+                        help='Cribl HTTP Source auth token (overrides .env)')
+
+    # Cribl REST API arguments
+    parser.add_argument('--cribl-api-url',
+                        help='Cribl REST API base URL (overrides .env)')
+    parser.add_argument('--cribl-client-id',
+                        help='Cribl API client ID (overrides .env)')
+    parser.add_argument('--cribl-client-secret',
+                        help='Cribl API client secret (overrides .env)')
+    parser.add_argument('--cribl-worker-group',
+                        help='Cribl worker group to check logs (overrides .env)')
+
+    # General arguments
     parser.add_argument('--num-events', type=int, help='Number of test events to send (default: 5)')
     parser.add_argument('--wait-time', type=int, default=10, help='Seconds to wait before searching (default: 10)')
 
     args = parser.parse_args()
 
     # Get configuration from args or environment
+    # Target selection
+    test_target = args.target or os.getenv('TEST_TARGET', 'splunk')
+    test_target = test_target.lower()
+
+    # Splunk configuration
     hec_url = args.hec_url or os.getenv('HEC_URL')
     hec_token = args.hec_token or os.getenv('HEC_TOKEN')
     splunk_host = args.splunk_host or os.getenv('SPLUNK_HOST')
@@ -697,49 +1150,108 @@ def main():
     splunk_token = args.splunk_token or os.getenv('SPLUNK_TOKEN')
     splunk_password = args.splunk_password or os.getenv('SPLUNK_PASSWORD')
     default_index = args.index or os.getenv('DEFAULT_INDEX')
+
+    # Cribl HTTP Source configuration
+    cribl_http_url = args.cribl_http_url or os.getenv('CRIBL_HTTP_URL')
+    cribl_http_token = args.cribl_http_token or os.getenv('CRIBL_HTTP_TOKEN')
+
+    # Cribl REST API configuration
+    cribl_api_url = args.cribl_api_url or os.getenv('CRIBL_API_URL')
+    cribl_client_id = args.cribl_client_id or os.getenv('CRIBL_CLIENT_ID')
+    cribl_client_secret = args.cribl_client_secret or os.getenv('CRIBL_CLIENT_SECRET')
+    cribl_worker_group = args.cribl_worker_group or os.getenv('CRIBL_WORKER_GROUP', 'default')
+
+    # General configuration
     num_events = args.num_events or int(os.getenv('NUM_EVENTS', '5'))
 
-    # Validate required configuration
-    if not hec_url:
-        print(f"{Colors.RED}Error: HEC_URL not provided. Set in .env or use --hec-url{Colors.END}")
-        sys.exit(1)
+    # Validate configuration based on target
+    is_valid, error_msg = validate_configuration(
+        test_target, hec_url, hec_token, splunk_host, splunk_username,
+        splunk_token, splunk_password, cribl_http_url, cribl_api_url,
+        cribl_client_id, cribl_client_secret
+    )
 
-    if not hec_token:
-        print(f"{Colors.RED}Error: HEC_TOKEN not provided. Set in .env or use --hec-token{Colors.END}")
-        sys.exit(1)
-
-    if not splunk_host:
-        print(f"{Colors.RED}Error: SPLUNK_HOST not provided. Set in .env or use --splunk-host{Colors.END}")
-        sys.exit(1)
-
-    if not splunk_username:
-        print(f"{Colors.RED}Error: SPLUNK_USERNAME not provided. Set in .env or use --splunk-username{Colors.END}")
-        sys.exit(1)
-
-    if not splunk_token and not splunk_password:
-        print(f"{Colors.RED}Error: Either SPLUNK_TOKEN or SPLUNK_PASSWORD must be provided{Colors.END}")
-        print(f"{Colors.YELLOW}Set in .env or use --splunk-token or --splunk-password{Colors.END}")
+    if not is_valid:
+        print(f"{Colors.RED}{Colors.BOLD}Configuration Error:{Colors.END}")
+        print(f"{Colors.RED}{error_msg}{Colors.END}")
+        print(f"\n{Colors.YELLOW}Set missing values in .env or use command-line arguments{Colors.END}")
+        print(f"{Colors.YELLOW}Run 'python hec_yeah.py --help' for available options{Colors.END}")
         sys.exit(1)
 
     # Suppress SSL warnings (in production, use proper SSL verification)
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    # Create tester and run
-    tester = HECTester(
-        hec_url=hec_url,
-        hec_token=hec_token,
-        splunk_host=splunk_host,
-        splunk_username=splunk_username,
-        splunk_password=splunk_password if splunk_password else None,
-        splunk_token=splunk_token if splunk_token else None,
-        default_index=default_index if default_index else None,
-        num_events=num_events
-    )
+    # Track overall success
+    overall_success = True
 
-    success = tester.run_test()
+    # Test Splunk if requested
+    if test_target in ['splunk', 'both']:
+        print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
+        print(f"{Colors.BOLD}TESTING TARGET: SPLUNK{Colors.END}")
+        print(f"{Colors.BOLD}{'='*70}{Colors.END}")
 
-    sys.exit(0 if success else 1)
+        splunk_tester = HECTester(
+            hec_url=hec_url,
+            hec_token=hec_token,
+            splunk_host=splunk_host,
+            splunk_username=splunk_username,
+            splunk_password=splunk_password if splunk_password else None,
+            splunk_token=splunk_token if splunk_token else None,
+            default_index=default_index if default_index else None,
+            num_events=num_events
+        )
+
+        splunk_success = splunk_tester.run_test()
+        overall_success = overall_success and splunk_success
+
+    # Test Cribl if requested
+    if test_target in ['cribl', 'both']:
+        print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
+        print(f"{Colors.BOLD}TESTING TARGET: CRIBL{Colors.END}")
+        print(f"{Colors.BOLD}{'='*70}{Colors.END}")
+
+        cribl_tester = CriblTester(
+            http_url=cribl_http_url,
+            http_token=cribl_http_token if cribl_http_token else None,
+            api_url=cribl_api_url,
+            client_id=cribl_client_id,
+            client_secret=cribl_client_secret,
+            worker_group=cribl_worker_group,
+            num_events=num_events
+        )
+
+        cribl_success = cribl_tester.run_test()
+        overall_success = overall_success and cribl_success
+
+    # Final summary
+    print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
+    print(f"{Colors.BOLD}FINAL TEST SUMMARY{Colors.END}")
+    print(f"{Colors.BOLD}{'='*70}{Colors.END}")
+
+    if test_target == 'both':
+        if overall_success:
+            print(f"{Colors.GREEN}{Colors.BOLD}✓ ALL TESTS PASSED (Cribl + Splunk){Colors.END}")
+        else:
+            print(f"{Colors.RED}{Colors.BOLD}✗ SOME TESTS FAILED{Colors.END}")
+            if 'cribl_success' in locals():
+                status = Colors.GREEN + "PASSED" + Colors.END if cribl_success else Colors.RED + "FAILED" + Colors.END
+                print(f"  Cribl:  {status}")
+            if 'splunk_success' in locals():
+                status = Colors.GREEN + "PASSED" + Colors.END if splunk_success else Colors.RED + "FAILED" + Colors.END
+                print(f"  Splunk: {status}")
+    elif test_target == 'splunk':
+        if overall_success:
+            print(f"{Colors.GREEN}{Colors.BOLD}✓ SPLUNK TEST PASSED{Colors.END}")
+        else:
+            print(f"{Colors.RED}{Colors.BOLD}✗ SPLUNK TEST FAILED{Colors.END}")
+    else:  # cribl
+        if overall_success:
+            print(f"{Colors.GREEN}{Colors.BOLD}✓ CRIBL TEST PASSED{Colors.END}")
+        else:
+            print(f"{Colors.RED}{Colors.BOLD}✗ CRIBL TEST FAILED{Colors.END}")
+
+    sys.exit(0 if overall_success else 1)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,7 @@
 # HEC-Yeah Quick Reference
 
+A tool for testing HTTP Event Collector (HEC) connectivity to **Cribl** and **Splunk**.
+
 ## One-Time Setup
 
 ```bash
@@ -34,8 +36,10 @@ python hec_yeah.py
 
 ## Common Commands
 
+### Testing Splunk (Default)
+
 ```bash
-# Basic test with default settings (5 events)
+# Basic test with default settings (5 events per endpoint)
 python hec_yeah.py
 
 # Test with 10 events
@@ -47,17 +51,7 @@ python hec_yeah.py --wait-time 20
 # Test specific index
 python hec_yeah.py --index myindex
 
-# Override all settings via command line (password auth)
-python hec_yeah.py \
-  --hec-url https://splunk.example.com:8088/services/collector \
-  --hec-token ABC123... \
-  --splunk-host https://splunk.example.com:8089 \
-  --splunk-username admin \
-  --splunk-password pass123 \
-  --num-events 10 \
-  --wait-time 15
-
-# Override all settings via command line (token auth - preferred)
+# Override Splunk settings via command line (token auth - preferred)
 python hec_yeah.py \
   --hec-url https://splunk.example.com:8088/services/collector \
   --hec-token ABC123... \
@@ -65,13 +59,41 @@ python hec_yeah.py \
   --splunk-username admin \
   --splunk-token XYZ789... \
   --num-events 10
+```
 
-# Show help
+### Testing Cribl
+
+```bash
+# Test Cribl only
+python hec_yeah.py --target cribl
+
+# Test both Cribl and Splunk
+python hec_yeah.py --target both
+
+# Override Cribl settings via command line
+python hec_yeah.py --target cribl \
+  --cribl-http-url http://cribl.example.com:10080 \
+  --cribl-api-url https://cribl.example.com:9000/api/v1 \
+  --cribl-client-id my-client-id \
+  --cribl-client-secret my-secret \
+  --num-events 10
+```
+
+### Help
+
+```bash
+# Show all available options
 python hec_yeah.py --help
 ```
 
 ## Required .env Variables
 
+### Target Selection
+```bash
+TEST_TARGET=splunk    # Options: splunk, cribl, both
+```
+
+### For Splunk Testing (when TEST_TARGET=splunk or both)
 ```bash
 HEC_URL=https://your-splunk:8088/services/collector
 HEC_TOKEN=your-hec-token-here
@@ -83,12 +105,28 @@ SPLUNK_TOKEN=your-bearer-token     # Preferred
 SPLUNK_PASSWORD=your-password      # Fallback
 ```
 
+### For Cribl Testing (when TEST_TARGET=cribl or both)
+```bash
+CRIBL_HTTP_URL=http://your-cribl:10080
+CRIBL_API_URL=https://your-cribl:9000/api/v1
+CRIBL_CLIENT_ID=your-client-id
+CRIBL_CLIENT_SECRET=your-client-secret
+```
+
 ## Optional .env Variables
 
 ```bash
-DEFAULT_INDEX=main        # Leave empty for default
-NUM_EVENTS=5             # Default is 5
+DEFAULT_INDEX=main              # Splunk index (leave empty for default)
+NUM_EVENTS=5                    # Events to send per endpoint
+CRIBL_HTTP_TOKEN=token          # Optional HTTP Source auth token
+CRIBL_WORKER_GROUP=default      # Worker group for distributed Cribl
 ```
+
+## Generate Cribl API Credentials
+
+1. Cribl UI → **Settings** → **API Credentials**
+2. Click **"Create New"**
+3. Copy client ID and secret to .env
 
 ## Authentication Methods
 

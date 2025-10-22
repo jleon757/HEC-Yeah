@@ -1,8 +1,42 @@
 # HEC-Yeah
 
-A Python tool that tests HTTP Event Collector (HEC) tokens and validates end-to-end event delivery to Splunk.
+A comprehensive testing tool for validating HTTP Event Collector (HEC) connectivity and event delivery to both **Cribl** and **Splunk**. HEC-Yeah sends test events, verifies successful delivery, and provides detailed diagnostics.
+
+## Testing Targets
+
+HEC-Yeah supports three testing modes:
+
+- **Cribl Only** (`TEST_TARGET=cribl`): Tests Cribl HTTP Source endpoint and verifies events in Cribl's internal logs via REST API
+- **Splunk Only** (`TEST_TARGET=splunk`): Tests Splunk HEC endpoints (both /collector and /collector/raw) and verifies events via Splunk Search API
+- **Both** (`TEST_TARGET=both`): Runs both Cribl and Splunk tests sequentially
+
+Configure the target in `.env` or via the `--target` command-line flag.
 
 ## What It Does
+
+### Cribl Testing
+
+HEC-Yeah validates Cribl HTTP Source ingestion and verifies event processing:
+
+1. **HTTP Source Event Delivery**
+   - Sends configurable number of test events to Cribl HTTP Source endpoint
+   - Supports optional token authentication
+   - Validates successful ingestion via HTTP response codes
+   - UUID-based test run identification
+
+2. **Internal Log Verification**
+   - Authenticates to Cribl REST API using client ID and secret
+   - Retrieves list of internal log files
+   - Identifies relevant log file (cribl.log or most recent)
+   - Downloads log content and searches for test event UUID
+   - Confirms event processing by counting UUID occurrences
+
+3. **Distributed Deployment Support**
+   - Supports querying specific worker groups
+   - Handles distributed log file locations
+   - Flexible log file identification
+
+### Splunk Testing
 
 HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
 
@@ -34,6 +68,28 @@ HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
    - HTTP error codes with descriptions
    - Search API authentication issues
    - Missing event detection
+
+### Cribl Testing
+
+HEC-Yeah validates Cribl HTTP Source ingestion and verifies event processing:
+
+1. **HTTP Source Event Delivery**
+   - Sends configurable number of test events to Cribl HTTP Source endpoint
+   - Supports optional token authentication
+   - Validates successful ingestion via HTTP response codes
+   - UUID-based test run identification
+
+2. **Internal Log Verification**
+   - Authenticates to Cribl REST API using client ID and secret
+   - Retrieves list of internal log files
+   - Identifies relevant log file (cribl.log or most recent)
+   - Downloads log content and searches for test event UUID
+   - Confirms event processing by counting UUID occurrences
+
+3. **Distributed Deployment Support**
+   - Supports querying specific worker groups
+   - Handles distributed log file locations
+   - Flexible log file identification
 
 ## Repository Contents
 
@@ -140,6 +196,12 @@ NUM_EVENTS=5
 
 ### Configuration Parameters
 
+#### Target Selection
+
+- **TEST_TARGET**: Which system(s) to test - `splunk`, `cribl`, or `both` (default: `splunk`)
+
+#### Splunk Configuration (Required if TEST_TARGET=splunk or both)
+
 - **HEC_URL**: Full URL to your HEC endpoint (e.g., `https://splunk.example.com:8088/services/collector`)
 - **HEC_TOKEN**: Your HEC authentication token
 - **SPLUNK_HOST**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
@@ -147,11 +209,33 @@ NUM_EVENTS=5
 - **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
 - **SPLUNK_PASSWORD**: (Optional) Password for the search user - used if SPLUNK_TOKEN not provided
 - **DEFAULT_INDEX**: (Optional) Target index name - if not specified, uses Splunk default
-- **NUM_EVENTS**: (Optional) Number of test events to send (default: 5)
 
-**Important Notes:**
-- You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
+#### Cribl Configuration (Required if TEST_TARGET=cribl or both)
+
+- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080`)
+- **CRIBL_HTTP_TOKEN**: (Optional) Auth token for HTTP Source (if enabled)
+- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://cribl.example.com:9000/api/v1`)
+- **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
+- **CRIBL_CLIENT_SECRET**: API client secret
+- **CRIBL_WORKER_GROUP**: (Optional) Worker group to check logs (default: `default`)
+
+#### General Configuration
+
+- **NUM_EVENTS**: (Optional) Number of test events to send per endpoint (default: 5)
+
+### Generating Cribl API Credentials
+
+1. Log in to Cribl UI
+2. Navigate to **Settings → API Credentials**
+3. Click **"Create New"** credential
+4. Copy the client ID and secret
+5. Add to `.env` file as `CRIBL_CLIENT_ID` and `CRIBL_CLIENT_SECRET`
+
+### Important Notes
+
+- **Splunk Authentication**: You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
 - **SAML/SSO Environments**: If your Splunk instance uses SAML or Single Sign-On (SSO) authentication, password authentication will NOT work. You MUST use a user token (`SPLUNK_TOKEN`) instead. Generate a token in Splunk: Settings → Tokens → Create New Token.
+- **Conditional Requirements**: The tool validates configuration based on `TEST_TARGET`. If testing only Splunk, Cribl parameters are not required, and vice versa.
 - **Quotes in .env**: Use double quotes around values that contain special characters (e.g., `!@#$%^&*`)
 - **After editing .env**: You do NOT need to reactivate the virtual environment - just run `python hec_yeah.py` again. The tool reloads `.env` on each run.
 
@@ -202,6 +286,10 @@ python hec_yeah.py \
 
 ### Available Arguments
 
+#### Target Selection
+- `--target`: Target system to test (`splunk`, `cribl`, or `both`)
+
+#### Splunk Arguments
 - `--hec-url`: HEC endpoint URL (overrides .env)
 - `--hec-token`: HEC token (overrides .env)
 - `--splunk-host`: Splunk host URL for search API (overrides .env)
@@ -209,8 +297,40 @@ python hec_yeah.py \
 - `--splunk-token`: Splunk bearer token for authentication (overrides .env)
 - `--splunk-password`: Splunk password for authentication (overrides .env)
 - `--index`: Target index (overrides .env)
+
+#### Cribl Arguments
+- `--cribl-http-url`: Cribl HTTP Source endpoint URL (overrides .env)
+- `--cribl-http-token`: Cribl HTTP Source auth token (overrides .env)
+- `--cribl-api-url`: Cribl REST API base URL (overrides .env)
+- `--cribl-client-id`: Cribl API client ID (overrides .env)
+- `--cribl-client-secret`: Cribl API client secret (overrides .env)
+- `--cribl-worker-group`: Cribl worker group to check logs (overrides .env)
+
+#### General Arguments
 - `--num-events`: Number of test events to send (default: 5)
 - `--wait-time`: Seconds to wait before searching (default: 10)
+
+### Testing Cribl
+
+**Test Cribl Only:**
+```bash
+python hec_yeah.py --target cribl
+```
+
+**Test Both Cribl and Splunk:**
+```bash
+python hec_yeah.py --target both
+```
+
+**Override Cribl Settings:**
+```bash
+python hec_yeah.py --target cribl \
+  --cribl-http-url http://cribl.example.com:10080 \
+  --cribl-api-url https://cribl.example.com:9000/api/v1 \
+  --cribl-client-id "my-client-id" \
+  --cribl-client-secret "my-secret" \
+  --num-events 10
+```
 
 ## Example Output
 
@@ -395,6 +515,40 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
    - Contact your Splunk Cloud administrator
 
 **Note**: HEC (port 8088) and Search API (port 8089) have different network requirements in Splunk Cloud.
+
+### Cribl Issues
+
+**"Authentication failed" to Cribl API**
+- Verify `CRIBL_CLIENT_ID` and `CRIBL_CLIENT_SECRET` are correct
+- Check that API credentials haven't been revoked in Cribl UI
+- Ensure `CRIBL_API_URL` includes `/api/v1` path (e.g., `https://cribl.example.com:9000/api/v1`)
+- Verify network connectivity to Cribl REST API port (typically 9000)
+
+**"Events sent but not found in logs"**
+- Increase wait time (events may take longer to appear in logs)
+- Check that HTTP Source is enabled and routing events correctly in Cribl
+- Verify `CRIBL_WORKER_GROUP` name is correct (for distributed deployments)
+- Manually check Cribl UI → Monitoring → Live Data to verify events are being processed
+- Check if log rotation occurred between sending and verification (use larger log files or test immediately)
+
+**"Cannot retrieve log files" or "Failed to get log files"**
+- Ensure `CRIBL_WORKER_GROUP` name is correct (use `default` for single-instance deployments)
+- Check API permissions for log file access
+- Verify REST API endpoint is accessible (port 9000 by default)
+- Try accessing the log endpoint manually: `GET /api/v1/system/logs`
+
+**"HTTP Source connection failed"**
+- Verify `CRIBL_HTTP_URL` is correct and includes the port
+- Check that HTTP Source is enabled in Cribl (Sources → HTTP)
+- Ensure firewall allows connections to HTTP Source port (typically 10080)
+- If using token auth (`CRIBL_HTTP_TOKEN`), verify token is configured correctly in HTTP Source settings
+- Test HTTP Source manually: `curl -X POST http://cribl.example.com:10080 -d '{"test":"data"}'`
+
+**"Could not find relevant log file"**
+- Check if Cribl is using non-standard log file names
+- Verify log files exist in Cribl (Settings → System Settings → Logs)
+- For distributed deployments, ensure you're querying the correct worker group
+- The tool looks for `cribl.log` first, then falls back to the most recent log file
 
 ## Security Notes
 
