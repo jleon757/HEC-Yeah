@@ -698,6 +698,9 @@ class CriblTester:
         self.access_token = None
         self.token_expiry = None
 
+        # Detect if using Cribl Cloud (needs /api/v1 prefix for endpoints)
+        self.is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
+
         # Derive both endpoint URLs from base HTTP URL
         # Remove /services/collector or /services/collector/raw if present
         base_url = http_url.replace('/services/collector/raw', '').replace('/services/collector', '')
@@ -978,12 +981,22 @@ class CriblTester:
         Returns:
             (success, error_message, log_files_list)
         """
-        # Cribl API endpoint for logs: GET /system/logs
-        # This may vary - might be /m/{worker_group}/system/logs for distributed
-        if self.worker_group and self.worker_group != 'default':
-            endpoint = f"/m/{self.worker_group}/system/logs"
+        # Cribl API endpoint for logs: GET /api/v1/system/logs (Cloud) or /system/logs (self-hosted)
+        # For distributed: /api/v1/m/{worker_group}/system/logs
+
+        # Build endpoint based on environment
+        if self.is_cribl_cloud:
+            # Cribl Cloud needs /api/v1 prefix
+            if self.worker_group and self.worker_group != 'default':
+                endpoint = f"/api/v1/m/{self.worker_group}/system/logs"
+            else:
+                endpoint = "/api/v1/system/logs"
         else:
-            endpoint = "/system/logs"
+            # Self-hosted: api_url already includes /api/v1
+            if self.worker_group and self.worker_group != 'default':
+                endpoint = f"/m/{self.worker_group}/system/logs"
+            else:
+                endpoint = "/system/logs"
 
         response, error = self._make_api_request('GET', endpoint)
 
@@ -1012,11 +1025,21 @@ class CriblTester:
         Returns:
             (success, error_message, log_content)
         """
-        # Endpoint: GET /system/logs/{id}
-        if self.worker_group and self.worker_group != 'default':
-            endpoint = f"/m/{self.worker_group}/system/logs/{log_file_id}"
+        # Endpoint: GET /api/v1/system/logs/{id} (Cloud) or /system/logs/{id} (self-hosted)
+
+        # Build endpoint based on environment
+        if self.is_cribl_cloud:
+            # Cribl Cloud needs /api/v1 prefix
+            if self.worker_group and self.worker_group != 'default':
+                endpoint = f"/api/v1/m/{self.worker_group}/system/logs/{log_file_id}"
+            else:
+                endpoint = f"/api/v1/system/logs/{log_file_id}"
         else:
-            endpoint = f"/system/logs/{log_file_id}"
+            # Self-hosted: api_url already includes /api/v1
+            if self.worker_group and self.worker_group != 'default':
+                endpoint = f"/m/{self.worker_group}/system/logs/{log_file_id}"
+            else:
+                endpoint = f"/system/logs/{log_file_id}"
 
         response, error = self._make_api_request('GET', endpoint)
 
