@@ -38,3 +38,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Project context (keep in directory but don't commit)
+PLAN.md
