@@ -701,6 +701,23 @@ class CriblTester:
         # Detect if using Cribl Cloud (needs /api/v1 prefix for endpoints)
         self.is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
 
+        # Extract workspace name from HTTP URL for Cribl Cloud
+        # URL pattern: https://<workspaceName>.main.<organizationId>.cribl.cloud:<port>
+        self.cribl_workspace = None
+        if self.is_cribl_cloud and 'cribl.cloud' in http_url.lower():
+            try:
+                # Extract hostname from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(http_url)
+                hostname = parsed.hostname or ''
+                # Split by dots and get first part (workspace name)
+                parts = hostname.split('.')
+                if len(parts) > 0 and parts[-2] == 'cribl' and parts[-1] == 'cloud':
+                    self.cribl_workspace = parts[0]
+                    print(f"{Colors.YELLOW}Detected Cribl Cloud workspace: {self.cribl_workspace}{Colors.END}")
+            except Exception as e:
+                print(f"{Colors.YELLOW}Warning: Could not extract workspace from HTTP URL: {e}{Colors.END}")
+
         # Derive both endpoint URLs from base HTTP URL
         # Remove /services/collector or /services/collector/raw if present
         base_url = http_url.replace('/services/collector/raw', '').replace('/services/collector', '')
@@ -986,11 +1003,10 @@ class CriblTester:
 
         # Build endpoint based on environment
         if self.is_cribl_cloud:
-            # Cribl Cloud needs /api/v1 prefix
-            if self.worker_group and self.worker_group != 'default':
-                endpoint = f"/api/v1/m/{self.worker_group}/system/logs"
-            else:
-                endpoint = "/api/v1/system/logs"
+            # Cribl Cloud needs /api/v1/m/<workspace>/system/logs
+            # Use extracted workspace name from HTTP URL
+            workspace = self.cribl_workspace or self.worker_group or 'default'
+            endpoint = f"/api/v1/m/{workspace}/system/logs"
         else:
             # Self-hosted: api_url already includes /api/v1
             if self.worker_group and self.worker_group != 'default':
@@ -1048,11 +1064,10 @@ class CriblTester:
 
         # Build endpoint based on environment
         if self.is_cribl_cloud:
-            # Cribl Cloud needs /api/v1 prefix
-            if self.worker_group and self.worker_group != 'default':
-                endpoint = f"/api/v1/m/{self.worker_group}/system/logs/{log_file_id}"
-            else:
-                endpoint = f"/api/v1/system/logs/{log_file_id}"
+            # Cribl Cloud needs /api/v1/m/<workspace>/system/logs/{id}
+            # Use extracted workspace name from HTTP URL
+            workspace = self.cribl_workspace or self.worker_group or 'default'
+            endpoint = f"/api/v1/m/{workspace}/system/logs/{log_file_id}"
         else:
             # Self-hosted: api_url already includes /api/v1
             if self.worker_group and self.worker_group != 'default':
