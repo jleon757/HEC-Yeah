@@ -701,9 +701,12 @@ class CriblTester:
         # Detect if using Cribl Cloud (needs /api/v1 prefix for endpoints)
         self.is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
 
-        # Extract workspace name from HTTP URL for Cribl Cloud
+        # Extract workspace name and API base URL from HTTP URL for Cribl Cloud
         # URL pattern: https://<workspaceName>.main.<organizationId>.cribl.cloud:<port>
+        # For Cribl Cloud, the system logs API uses the workspace URL, not api.cribl.cloud
         self.cribl_workspace = None
+        self.cribl_logs_api_base = self.api_url  # Default to provided api_url
+
         if self.is_cribl_cloud and 'cribl.cloud' in http_url.lower():
             try:
                 # Extract hostname from URL
@@ -714,7 +717,11 @@ class CriblTester:
                 parts = hostname.split('.')
                 if len(parts) > 0 and parts[-2] == 'cribl' and parts[-1] == 'cloud':
                     self.cribl_workspace = parts[0]
+                    # For system logs API, use the workspace URL (without port)
+                    # e.g., https://default.main.happy-elgamal-foi6wsh.cribl.cloud
+                    self.cribl_logs_api_base = f"{parsed.scheme}://{hostname}"
                     print(f"{Colors.YELLOW}Detected Cribl Cloud workspace: {self.cribl_workspace}{Colors.END}")
+                    print(f"{Colors.YELLOW}Using logs API base: {self.cribl_logs_api_base}{Colors.END}")
             except Exception as e:
                 print(f"{Colors.YELLOW}Warning: Could not extract workspace from HTTP URL: {e}{Colors.END}")
 
@@ -875,8 +882,14 @@ class CriblTester:
         headers['Authorization'] = f'Bearer {self.access_token}'
         headers['Content-Type'] = 'application/json'
 
+        # Determine base URL - use workspace URL for system/logs endpoints on Cribl Cloud
+        if self.is_cribl_cloud and '/system/logs' in endpoint:
+            base_url = self.cribl_logs_api_base
+        else:
+            base_url = self.api_url
+
         # Make request
-        url = f"{self.api_url}{endpoint}"
+        url = f"{base_url}{endpoint}"
         try:
             response = self.session.request(
                 method,
