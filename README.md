@@ -175,8 +175,8 @@ Edit the `.env` file with your Splunk configuration:
 ```bash
 # Splunk HEC Configuration
 # Note: Quotes are optional but recommended for values with special characters
-HEC_URL="https://your-splunk-instance:8088/services/collector"
-HEC_TOKEN="your-hec-token-here"
+SPLUNK_HEC_URL="https://your-splunk-instance:8088/services/collector"
+SPLUNK_HEC_TOKEN="your-hec-token-here"
 
 # Splunk Search API Configuration
 SPLUNK_HOST="https://your-splunk-instance:8089"
@@ -202,8 +202,8 @@ NUM_EVENTS=5
 
 #### Splunk Configuration (Required if TEST_TARGET=splunk or both)
 
-- **HEC_URL**: Full URL to your HEC endpoint (e.g., `https://splunk.example.com:8088/services/collector`)
-- **HEC_TOKEN**: Your HEC authentication token
+- **SPLUNK_HEC_URL**: Splunk HEC endpoint URL (e.g., `https://splunk.example.com:8088/services/collector`) - this token is tested for event ingestion
+- **SPLUNK_HEC_TOKEN**: HEC authentication token - this token is tested to verify it can send events to Splunk
 - **SPLUNK_HOST**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
 - **SPLUNK_USERNAME**: Username with search privileges
 - **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
@@ -212,8 +212,8 @@ NUM_EVENTS=5
 
 #### Cribl Configuration (Required if TEST_TARGET=cribl or both)
 
-- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080`)
-- **CRIBL_HTTP_TOKEN**: (Optional) Auth token for HTTP Source (if enabled)
+- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080` or `https://in.main-default-xxxxx.cribl.cloud` for Cribl Cloud)
+- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
 - **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://cribl.example.com:9000/api/v1`)
 - **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
 - **CRIBL_CLIENT_SECRET**: API client secret
@@ -447,7 +447,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 ### Runtime Issues
 
 **"DNS resolution failed"**
-- Verify the hostname in HEC_URL or SPLUNK_HOST is correct
+- Verify the hostname in SPLUNK_HEC_URL or SPLUNK_HOST is correct
 - Check network connectivity
 - Verify DNS is configured correctly
 
@@ -541,7 +541,7 @@ Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com:
 - Verify `CRIBL_HTTP_URL` is correct and includes the port
 - Check that HTTP Source is enabled in Cribl (Sources → HTTP)
 - Ensure firewall allows connections to HTTP Source port (typically 10080)
-- If using token auth (`CRIBL_HTTP_TOKEN`), verify token is configured correctly in HTTP Source settings
+- If using token auth (`CRIBL_HEC_TOKEN`), verify token is configured correctly in HTTP Source settings
 - Test HTTP Source manually: `curl -X POST http://cribl.example.com:10080 -d '{"test":"data"}'`
 
 **"Could not find relevant log file"**

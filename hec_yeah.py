@@ -1137,9 +1137,9 @@ def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: 
     # Validate Splunk configuration if needed
     if test_target in ['splunk', 'both']:
         if not hec_url:
-            errors.append("HEC_URL not provided (required for Splunk testing)")
+            errors.append("SPLUNK_HEC_URL not provided (required for Splunk testing)")
         if not hec_token:
-            errors.append("HEC_TOKEN not provided (required for Splunk testing)")
+            errors.append("SPLUNK_HEC_TOKEN not provided (required for Splunk testing)")
         if not splunk_host:
             errors.append("SPLUNK_HOST not provided (required for Splunk testing)")
         if not splunk_username:
@@ -1179,8 +1179,8 @@ def main():
                         help='Target system to test: cribl, splunk, or both (overrides .env)')
 
     # Splunk arguments
-    parser.add_argument('--hec-url', help='HEC endpoint URL (overrides .env)')
-    parser.add_argument('--hec-token', help='HEC token (overrides .env)')
+    parser.add_argument('--hec-url', help='Splunk HEC endpoint URL (overrides .env SPLUNK_HEC_URL)')
+    parser.add_argument('--hec-token', help='Splunk HEC token (overrides .env SPLUNK_HEC_TOKEN)')
     parser.add_argument('--splunk-host', help='Splunk host URL for search API (overrides .env)')
     parser.add_argument('--splunk-username', help='Splunk username (overrides .env)')
     parser.add_argument('--splunk-token', help='Splunk bearer token for auth (overrides .env)')
@@ -1189,9 +1189,9 @@ def main():
 
     # Cribl HTTP Source arguments
     parser.add_argument('--cribl-http-url',
-                        help='Cribl HTTP Source endpoint URL (overrides .env)')
+                        help='Cribl HTTP Source endpoint URL (overrides .env CRIBL_HTTP_URL)')
     parser.add_argument('--cribl-http-token',
-                        help='Cribl HTTP Source auth token (overrides .env)')
+                        help='Cribl HEC token for HTTP Source (overrides .env CRIBL_HEC_TOKEN)')
 
     # Cribl REST API arguments
     parser.add_argument('--cribl-api-url',
@@ -1215,8 +1215,8 @@ def main():
     test_target = test_target.lower()
 
     # Splunk configuration
-    hec_url = args.hec_url or os.getenv('HEC_URL')
-    hec_token = args.hec_token or os.getenv('HEC_TOKEN')
+    hec_url = args.hec_url or os.getenv('SPLUNK_HEC_URL') or os.getenv('HEC_URL')  # Backward compatibility
+    hec_token = args.hec_token or os.getenv('SPLUNK_HEC_TOKEN') or os.getenv('HEC_TOKEN')  # Backward compatibility
     splunk_host = args.splunk_host or os.getenv('SPLUNK_HOST')
     splunk_username = args.splunk_username or os.getenv('SPLUNK_USERNAME')
     splunk_token = args.splunk_token or os.getenv('SPLUNK_TOKEN')
@@ -1225,7 +1225,7 @@ def main():
 
     # Cribl HTTP Source configuration
     cribl_http_url = args.cribl_http_url or os.getenv('CRIBL_HTTP_URL')
-    cribl_http_token = args.cribl_http_token or os.getenv('CRIBL_HTTP_TOKEN')
+    cribl_http_token = args.cribl_http_token or os.getenv('CRIBL_HEC_TOKEN') or os.getenv('CRIBL_HTTP_TOKEN')  # Backward compatibility
 
     # Cribl REST API configuration
     cribl_api_url = args.cribl_api_url or os.getenv('CRIBL_API_URL')

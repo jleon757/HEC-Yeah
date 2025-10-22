@@ -94,8 +94,8 @@ echo    - CRIBL_CLIENT_SECRET
 echo    [33mGenerate API credentials in Cribl: Settings → API Credentials[0m
 echo.
 echo    For Splunk testing (TEST_TARGET=splunk or both):
-echo    - HEC_URL
-echo    - HEC_TOKEN
+echo    - SPLUNK_HEC_URL
+echo    - SPLUNK_HEC_TOKEN
 echo    - SPLUNK_HOST
 echo    - SPLUNK_USERNAME
 echo    - SPLUNK_TOKEN or SPLUNK_PASSWORD (token preferred)

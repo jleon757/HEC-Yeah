@@ -95,8 +95,9 @@ TEST_TARGET=splunk    # Options: splunk, cribl, both
 
 ### For Splunk Testing (when TEST_TARGET=splunk or both)
 ```bash
-HEC_URL=https://your-splunk:8088/services/collector
-HEC_TOKEN=your-hec-token-here
+# Splunk HEC endpoint - this token is tested for event ingestion
+SPLUNK_HEC_URL=https://your-splunk:8088/services/collector
+SPLUNK_HEC_TOKEN=your-hec-token-here
 SPLUNK_HOST=https://your-splunk:8089
 SPLUNK_USERNAME=your-username
 
@@ -107,6 +108,7 @@ SPLUNK_PASSWORD=your-password      # Fallback
 
 ### For Cribl Testing (when TEST_TARGET=cribl or both)
 ```bash
+# Cribl HTTP Source endpoint
 CRIBL_HTTP_URL=http://your-cribl:10080
 CRIBL_API_URL=https://your-cribl:9000/api/v1
 CRIBL_CLIENT_ID=your-client-id
@@ -118,7 +120,7 @@ CRIBL_CLIENT_SECRET=your-client-secret
 ```bash
 DEFAULT_INDEX=main              # Splunk index (leave empty for default)
 NUM_EVENTS=5                    # Events to send per endpoint
-CRIBL_HTTP_TOKEN=token          # Optional HTTP Source auth token
+CRIBL_HEC_TOKEN=token           # Optional HEC token - tested to verify it can send events to Cribl
 CRIBL_WORKER_GROUP=default      # Worker group for distributed Cribl
 ```
 
@@ -153,7 +155,7 @@ CRIBL_WORKER_GROUP=default      # Worker group for distributed Cribl
 |-------|----------|
 | Permission denied (setup.sh) | `chmod +x setup.sh` |
 | Python not found | Install Python 3.x |
-| DNS resolution failed | Check HEC_URL hostname |
+| DNS resolution failed | Check SPLUNK_HEC_URL or CRIBL_HTTP_URL hostname |
 | Invalid HEC token | Verify token in Splunk |
 | Search API auth failed | Check username/password |
 | No events found | Increase --wait-time |
