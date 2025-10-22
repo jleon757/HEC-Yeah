@@ -715,90 +715,112 @@ class CriblTester:
     def _authenticate(self) -> Tuple[bool, Optional[str]]:
         """
         Authenticate to Cribl API using client credentials.
-        Tries multiple authentication methods to support different Cribl configurations.
+        Supports both Cribl Cloud and Cribl Stream (self-hosted) authentication.
         Stores access token for subsequent requests.
 
         Returns:
             (success, error_message)
         """
-        # Normalize the auth URL - ensure it doesn't have duplicate /api/v1
-        if '/api/v1' in self.api_url:
-            base_url = self.api_url.split('/api/v1')[0]
-        else:
-            base_url = self.api_url.rstrip('/')
-
         auth_errors = []
 
-        try:
-            # Method 1: Direct username/password authentication (most common for Cribl)
-            # The client_id is often the username and client_secret is the password
-            auth_url = f"{base_url}/api/v1/auth/login"
-
-            payload = {
-                "username": self.client_id,
-                "password": self.client_secret
-            }
-
-            response = self.session.post(
-                auth_url,
-                json=payload,
-                timeout=10,
-                verify=False
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                self.access_token = data.get('token') or data.get('access_token')
-                if self.access_token:
-                    self.token_expiry = time.time() + 3600
-                    return True, None
-                else:
-                    auth_errors.append(f"Method 1: Success but no token in response: {data}")
-            else:
-                auth_errors.append(f"Method 1 (username/password JSON): HTTP {response.status_code} - {response.text}")
-
-        except requests.exceptions.Timeout:
-            auth_errors.append("Method 1: Request timed out")
-        except Exception as e:
-            auth_errors.append(f"Method 1: {str(e)}")
+        # Detect if using Cribl Cloud based on api_url
+        is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
 
         try:
-            # Method 2: OAuth2 client credentials flow with form data
-            auth_url = f"{base_url}/api/v1/auth/login"
+            if is_cribl_cloud:
+                # Method 1: Cribl Cloud OAuth2 authentication
+                auth_url = "https://login.cribl.cloud/oauth/token"
 
-            payload = {
-                "grant_type": "client_credentials",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret
-            }
+                payload = {
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "audience": "https://api.cribl.cloud"
+                }
 
-            response = self.session.post(
-                auth_url,
-                data=payload,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=10,
-                verify=False
-            )
+                response = self.session.post(
+                    auth_url,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10,
+                    verify=True  # Cribl Cloud uses valid SSL
+                )
 
-            if response.status_code == 200:
-                data = response.json()
-                self.access_token = data.get('access_token') or data.get('token')
-                if self.access_token:
-                    self.token_expiry = time.time() + 3600
-                    return True, None
+                if response.status_code == 200:
+                    data = response.json()
+                    self.access_token = data.get('access_token')
+                    if self.access_token:
+                        # Cribl Cloud tokens expire in 24 hours (86400 seconds)
+                        expires_in = data.get('expires_in', 86400)
+                        self.token_expiry = time.time() + expires_in
+                        print(f"{Colors.GREEN}✓ Authenticated to Cribl Cloud{Colors.END}")
+                        return True, None
+                    else:
+                        auth_errors.append(f"Cribl Cloud: Success but no access_token in response: {data}")
                 else:
-                    auth_errors.append(f"Method 2: Success but no token in response: {data}")
+                    auth_errors.append(f"Cribl Cloud OAuth2: HTTP {response.status_code} - {response.text}")
+
             else:
-                auth_errors.append(f"Method 2 (OAuth2 form-encoded): HTTP {response.status_code} - {response.text}")
+                # Method 2: Cribl Stream (self-hosted) authentication
+                # Normalize the auth URL - ensure it doesn't have duplicate /api/v1
+                if '/api/v1' in self.api_url:
+                    base_url = self.api_url.split('/api/v1')[0]
+                else:
+                    base_url = self.api_url.rstrip('/')
+
+                auth_url = f"{base_url}/api/v1/auth/login"
+
+                # Try username/password JSON authentication
+                payload = {
+                    "username": self.client_id,
+                    "password": self.client_secret
+                }
+
+                response = self.session.post(
+                    auth_url,
+                    json=payload,
+                    timeout=10,
+                    verify=False
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    self.access_token = data.get('token') or data.get('access_token')
+                    if self.access_token:
+                        self.token_expiry = time.time() + 3600
+                        print(f"{Colors.GREEN}✓ Authenticated to Cribl Stream{Colors.END}")
+                        return True, None
+                    else:
+                        auth_errors.append(f"Cribl Stream: Success but no token in response: {data}")
+                else:
+                    auth_errors.append(f"Cribl Stream (username/password): HTTP {response.status_code} - {response.text}")
 
         except requests.exceptions.Timeout:
-            auth_errors.append("Method 2: Request timed out")
+            auth_errors.append("Authentication request timed out")
         except Exception as e:
-            auth_errors.append(f"Method 2: {str(e)}")
+            auth_errors.append(f"Authentication error: {str(e)}")
 
-        # All methods failed
+        # Authentication failed
         error_details = "\n  ".join(auth_errors)
-        return False, f"All authentication methods failed:\n  {error_details}\n\nPlease verify:\n  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n  2. Credentials have not been revoked in Cribl UI\n  3. CRIBL_API_URL is correct (should end with /api/v1)"
+
+        if is_cribl_cloud:
+            guidance = (
+                f"\n\nPlease verify:\n"
+                f"  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n"
+                f"  2. Credentials have not been revoked in Cribl Cloud\n"
+                f"  3. CRIBL_API_URL should be: https://api.cribl.cloud\n"
+                f"  4. Generate credentials at: https://manage.cribl.cloud → Settings → API Credentials"
+            )
+        else:
+            guidance = (
+                f"\n\nPlease verify:\n"
+                f"  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n"
+                f"  2. Credentials have not been revoked in Cribl UI\n"
+                f"  3. CRIBL_API_URL is correct (should be https://your-instance:9000/api/v1)\n"
+                f"  4. Generate credentials in Cribl: Settings → API Credentials"
+            )
+
+        return False, f"Authentication failed:\n  {error_details}{guidance}"
 
     def _ensure_authenticated(self) -> Tuple[bool, Optional[str]]:
         """Ensure we have a valid access token"""
