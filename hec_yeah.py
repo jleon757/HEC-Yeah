@@ -679,7 +679,7 @@ class CriblTester:
         Initialize Cribl tester
 
         Args:
-            http_url: Cribl HTTP Source endpoint URL
+            http_url: Cribl HTTP Source endpoint URL (base URL or full path)
             http_token: Optional auth token for HTTP Source
             api_url: Cribl REST API base URL
             client_id: API client ID
@@ -687,7 +687,6 @@ class CriblTester:
             worker_group: Worker group to check logs for
             num_events: Number of test events to send
         """
-        self.http_url = http_url
         self.http_token = http_token
         self.api_url = api_url
         self.client_id = client_id
@@ -698,6 +697,12 @@ class CriblTester:
         self.session = self._create_session()
         self.access_token = None
         self.token_expiry = None
+
+        # Derive both endpoint URLs from base HTTP URL
+        # Remove /services/collector or /services/collector/raw if present
+        base_url = http_url.replace('/services/collector/raw', '').replace('/services/collector', '')
+        self.http_event_url = f"{base_url}/services/collector"
+        self.http_raw_url = f"{base_url}/services/collector/raw"
 
     def _create_session(self) -> requests.Session:
         """Create requests session with retry logic"""
@@ -867,34 +872,61 @@ class CriblTester:
         except Exception as e:
             return None, f"Request error: {str(e)}"
 
-    def generate_test_events(self) -> List[Dict]:
-        """Generate test events for Cribl"""
+    def generate_test_events(self, endpoint_type: str) -> List[Dict]:
+        """Generate test events for Cribl for specific endpoint type
+
+        Args:
+            endpoint_type: Either 'event' or 'raw'
+        """
         events = []
         current_time = time.time()
 
         for i in range(self.num_events):
-            event = {
+            # Create event data
+            event_data = {
                 "test_id": self.test_id,
                 "tool": "hec-yeah",
                 "target": "cribl",
+                "endpoint_type": endpoint_type,
                 "event_number": i + 1,
                 "total_events": self.num_events,
-                "message": f"HEC-Yeah test event {i+1} of {self.num_events} (target: cribl)",
-                "timestamp": datetime.fromtimestamp(current_time + i).isoformat(),
-                "_time": current_time + i
+                "message": f"HEC-Yeah test event {i+1} of {self.num_events} (endpoint: {endpoint_type})",
+                "timestamp": datetime.fromtimestamp(current_time + i).isoformat()
             }
+
+            if endpoint_type == "event":
+                # Structured event for /services/collector (with HEC envelope)
+                event = {
+                    "time": current_time + i,
+                    "event": event_data,
+                    "sourcetype": "hec_yeah_test",
+                    "source": "hec-yeah-tool"
+                }
+            else:
+                # Raw endpoint - send JSON directly without envelope
+                event_data["sourcetype"] = "hec_yeah_test"
+                event_data["source"] = "hec-yeah-tool"
+                event = event_data
+
             events.append(event)
 
         return events
 
-    def send_events(self, events: List[Dict]) -> Tuple[bool, Optional[str], int]:
+    def send_events(self, events: List[Dict], endpoint_url: str, endpoint_type: str) -> Tuple[bool, Optional[str], int]:
         """
-        Send events to Cribl HTTP Source
+        Send events to Cribl HTTP Source endpoint
+
+        Args:
+            events: List of events to send
+            endpoint_url: Full URL to the endpoint
+            endpoint_type: Either 'event' or 'raw'
 
         Returns:
             (success, error_message, num_sent)
         """
-        print(f"\n{Colors.BLUE}Sending {len(events)} events to Cribl HTTP Source...{Colors.END}")
+        print(f"\n{Colors.BLUE}Sending {len(events)} test events to {endpoint_type} endpoint...{Colors.END}")
+        print(f"Endpoint: {endpoint_url}")
+        print(f"Test ID: {Colors.BOLD}{self.test_id}{Colors.END}")
 
         sent_count = 0
         headers = {'Content-Type': 'application/json'}
@@ -905,13 +937,24 @@ class CriblTester:
 
         for i, event in enumerate(events, 1):
             try:
-                response = self.session.post(
-                    self.http_url,
-                    json=event,
-                    headers=headers,
-                    timeout=10,
-                    verify=False
-                )
+                if endpoint_type == "event":
+                    # Send as JSON object for event endpoint
+                    response = self.session.post(
+                        endpoint_url,
+                        headers=headers,
+                        json=event,
+                        verify=False,
+                        timeout=10
+                    )
+                else:
+                    # Send as JSON string for raw endpoint
+                    response = self.session.post(
+                        endpoint_url,
+                        headers=headers,
+                        data=json.dumps(event),
+                        verify=False,
+                        timeout=10
+                    )
 
                 if response.status_code in [200, 201, 204]:
                     print(f"  {Colors.GREEN}✓{Colors.END} Event {i}/{len(events)} sent successfully")
@@ -1067,7 +1110,7 @@ class CriblTester:
             return False, f"Only found {occurrences} event references in logs", results
 
     def run_test(self) -> bool:
-        """Run complete Cribl test workflow"""
+        """Run complete Cribl test workflow - tests both event and raw endpoints"""
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}Cribl HTTP Source & Log Verification Test{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
@@ -1081,22 +1124,34 @@ class CriblTester:
             return False
         print(f"{Colors.GREEN}✓ Authentication successful{Colors.END}")
 
-        # Step 2: Generate and send events
-        events = self.generate_test_events()
-        success, error, sent_count = self.send_events(events)
-        if not success:
-            print(f"{Colors.RED}✗ Event sending failed: {error}{Colors.END}")
+        # Step 2: Test EVENT endpoint (/services/collector)
+        print(f"\n{Colors.BOLD}Testing EVENT endpoint (/services/collector){Colors.END}")
+        event_events = self.generate_test_events("event")
+        event_success, event_error, event_sent = self.send_events(event_events, self.http_event_url, "event")
+        if not event_success:
+            print(f"{Colors.RED}✗ EVENT endpoint failed: {event_error}{Colors.END}")
             return False
 
-        # Step 3: Wait for events to be processed
+        # Step 3: Test RAW endpoint (/services/collector/raw)
+        print(f"\n{Colors.BOLD}Testing RAW endpoint (/services/collector/raw){Colors.END}")
+        raw_events = self.generate_test_events("raw")
+        raw_success, raw_error, raw_sent = self.send_events(raw_events, self.http_raw_url, "raw")
+        if not raw_success:
+            print(f"{Colors.RED}✗ RAW endpoint failed: {raw_error}{Colors.END}")
+            return False
+
+        total_sent = event_sent + raw_sent
+        total_expected = self.num_events * 2  # Both endpoints
+
+        # Step 4: Wait for events to be processed
         wait_time = 10
         print(f"\n{Colors.YELLOW}Waiting {wait_time} seconds for events to be processed...{Colors.END}")
         time.sleep(wait_time)
 
-        # Step 4: Verify events in logs
+        # Step 5: Verify events in logs
         success, error, results = self.verify_events_in_logs()
 
-        # Step 5: Display results
+        # Step 6: Display results
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}TEST RESULTS - CRIBL{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
@@ -1104,13 +1159,17 @@ class CriblTester:
 
         if success:
             print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
-            print(f"  Sent: {sent_count}/{self.num_events} events")
+            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent")
+            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent")
+            print(f"  Total: {total_sent}/{total_expected} events sent")
             print(f"  Found: {results.get('occurrences', 0)} references in logs")
             print(f"  Log file: {results.get('log_file', 'N/A')}")
             return True
         else:
             print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠ TEST PARTIALLY SUCCESSFUL{Colors.END}")
-            print(f"  Sent: {sent_count}/{self.num_events} events")
+            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent")
+            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent")
+            print(f"  Total: {total_sent}/{total_expected} events sent")
             print(f"  Found: {results.get('occurrences', 0)} references in logs")
             print(f"  Log file: {results.get('log_file', 'N/A')}")
             print(f"\n{Colors.YELLOW}Note: Events were sent successfully but verification incomplete{Colors.END}")
