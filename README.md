@@ -1,16 +1,6 @@
 # HEC-Yeah
 
-A comprehensive testing tool for validating HTTP Event Collector (HEC) connectivity and event delivery to both **Cribl** and **Splunk**. HEC-Yeah sends test events, verifies successful delivery, and provides detailed diagnostics.
-
-## Testing Targets
-
-HEC-Yeah supports three testing modes:
-
-- **Cribl Only** (`TEST_TARGET=cribl`): Tests Cribl HTTP Source endpoint and verifies events in Cribl's internal logs via REST API
-- **Splunk Only** (`TEST_TARGET=splunk`): Tests Splunk HEC endpoints (both /collector and /collector/raw) and verifies events via Splunk Search API
-- **Both** (`TEST_TARGET=both`): Runs both Cribl and Splunk tests sequentially
-
-Configure the target in `.env` or via the `--target` command-line flag.
+A comprehensive testing tool for validating HTTP Event Collector (HEC) connectivity and event delivery to **Cribl**, **Splunk**, or both!  HEC-Yeah sends test events, verifies successful delivery, and provides detailed diagnostics.
 
 ## What It Does
 
@@ -69,28 +59,6 @@ HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
    - Search API authentication issues
    - Missing event detection
 
-### Cribl Testing
-
-HEC-Yeah validates Cribl HTTP Source ingestion and verifies event processing:
-
-1. **HTTP Source Event Delivery**
-   - Sends configurable number of test events to Cribl HTTP Source endpoint
-   - Supports optional token authentication
-   - Validates successful ingestion via HTTP response codes
-   - UUID-based test run identification
-
-2. **Internal Log Verification**
-   - Authenticates to Cribl REST API using client ID and secret
-   - Retrieves list of internal log files
-   - Identifies relevant log file (cribl.log or most recent)
-   - Downloads log content and searches for test event UUID
-   - Confirms event processing by counting UUID occurrences
-
-3. **Distributed Deployment Support**
-   - Supports querying specific worker groups
-   - Handles distributed log file locations
-   - Flexible log file identification
-
 ## Repository Contents
 
 - **hec_yeah.py** - Main HEC testing tool
@@ -103,7 +71,7 @@ HEC-Yeah validates Cribl HTTP Source ingestion and verifies event processing:
 
 ## Quick Start
 
-### Automated Setup (Recommended)
+### Automated Setup
 
 1. Clone the repository:
 ```bash
@@ -130,75 +98,31 @@ The setup script will automatically:
 - Copy `.env.example` to `.env`
 - Make the script executable (macOS/Linux)
 
-3. Edit the `.env` file with your Splunk credentials:
+3. Edit the `.env` file with applicable Cribl and/or Splunk credentials:
 ```bash
 nano .env  # or use your preferred editor
 ```
 
 4. Run HEC-Yeah:
 ```bash
-source venv/bin/activate  # Activate venv (if not already active)
+source venv/bin/activate  # Activate venv
 python hec_yeah.py
-```
-
-### Manual Installation
-
-If you prefer to set up manually:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/jleon757/HEC-Yeah.git
-cd HEC-Yeah
-```
-
-2. Create a virtual environment:
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Configure your environment:
-```bash
-cp .env.example .env
-# Edit .env with your Splunk credentials
 ```
 
 ## Configuration
 
-Edit the `.env` file with your Splunk configuration:
-
-```bash
-# Splunk HEC Configuration
-# Note: Quotes are optional but recommended for values with special characters
-SPLUNK_HEC_URL="https://your-splunk-instance:8088/services/collector"
-SPLUNK_HEC_TOKEN="your-hec-token-here"
-
-# Splunk Search API Configuration
-SPLUNK_HTTP_URL="https://your-splunk-instance:8089"
-SPLUNK_USERNAME="your-search-username"
-
-# Authentication: Use either token OR password (token is preferred)
-# Use quotes if your password/token contains special characters (!@#$%^&* etc)
-SPLUNK_TOKEN="your-splunk-bearer-token-here"
-SPLUNK_PASSWORD="your-search-password"
-
-# Optional: Override default index (leave empty for default)
-DEFAULT_INDEX=""
-
-# Optional: Number of test events to send (default: 5)
-NUM_EVENTS=5
-```
-
-### Configuration Parameters
-
 #### Target Selection
 
-- **TEST_TARGET**: Which system(s) to test - `splunk`, `cribl`, or `both` (default: `splunk`)
+- **TEST_TARGET**: Which system(s) to test - `cribl`, `splunk`, or `both` (default: `splunk`)
+
+#### Cribl Configuration (Required if TEST_TARGET=cribl or both)
+
+- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
+- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
+- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://api.cribl.cloud` for Cribl Cloud or `https://cribl.example.com:9000/api/v1` for self-hosted)
+- **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
+- **CRIBL_CLIENT_SECRET**: API client secret
+- **CRIBL_WORKER_GROUP**: (Optional) Worker group to check logs (default: `default`)
 
 #### Splunk Configuration (Required if TEST_TARGET=splunk or both)
 
@@ -209,15 +133,6 @@ NUM_EVENTS=5
 - **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
 - **SPLUNK_PASSWORD**: (Optional) Password for the search user - used if SPLUNK_TOKEN not provided
 - **DEFAULT_INDEX**: (Optional) Target index name - if not specified, uses Splunk default
-
-#### Cribl Configuration (Required if TEST_TARGET=cribl or both)
-
-- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
-- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
-- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://api.cribl.cloud` for Cribl Cloud or `https://cribl.example.com:9000/api/v1` for self-hosted)
-- **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
-- **CRIBL_CLIENT_SECRET**: API client secret
-- **CRIBL_WORKER_GROUP**: (Optional) Worker group to check logs (default: `default`)
 
 #### General Configuration
 
@@ -289,6 +204,14 @@ python hec_yeah.py \
 #### Target Selection
 - `--target`: Target system to test (`splunk`, `cribl`, or `both`)
 
+#### Cribl Arguments
+- `--cribl-http-url`: Cribl HTTP Source endpoint URL (overrides .env)
+- `--cribl-http-token`: Cribl HTTP Source auth token (overrides .env)
+- `--cribl-api-url`: Cribl REST API base URL (overrides .env)
+- `--cribl-client-id`: Cribl API client ID (overrides .env)
+- `--cribl-client-secret`: Cribl API client secret (overrides .env)
+- `--cribl-worker-group`: Cribl worker group to check logs (overrides .env)
+
 #### Splunk Arguments
 - `--hec-url`: HEC endpoint URL (overrides .env)
 - `--hec-token`: HEC token (overrides .env)
@@ -297,14 +220,6 @@ python hec_yeah.py \
 - `--splunk-token`: Splunk bearer token for authentication (overrides .env)
 - `--splunk-password`: Splunk password for authentication (overrides .env)
 - `--index`: Target index (overrides .env)
-
-#### Cribl Arguments
-- `--cribl-http-url`: Cribl HTTP Source endpoint URL (overrides .env)
-- `--cribl-http-token`: Cribl HTTP Source auth token (overrides .env)
-- `--cribl-api-url`: Cribl REST API base URL (overrides .env)
-- `--cribl-client-id`: Cribl API client ID (overrides .env)
-- `--cribl-client-secret`: Cribl API client secret (overrides .env)
-- `--cribl-worker-group`: Cribl worker group to check logs (overrides .env)
 
 #### General Arguments
 - `--num-events`: Number of test events to send (default: 5)
@@ -376,30 +291,6 @@ Event Details:
   Avg Indexing Lag: 0.42 seconds
 
 ============================================================
-```
-
-### Failed Test (Invalid Token)
-```
-============================================================
-HEC-Yeah: HEC Token & Connectivity Tester
-============================================================
-
-Testing HEC endpoint connectivity...
-
-✗ TEST FAILED
-Error: Authentication Failed: Invalid HEC token
-```
-
-### Failed Test (DNS Resolution)
-```
-============================================================
-HEC-Yeah: HEC Token & Connectivity Tester
-============================================================
-
-Testing HEC endpoint connectivity...
-
-✗ TEST FAILED
-Error: DNS Resolution Error: DNS resolution failed for invalid-host.example.com: [Errno 8] nodename nor servname provided, or not known
 ```
 
 ## How It Works
