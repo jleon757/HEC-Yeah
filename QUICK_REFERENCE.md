@@ -72,7 +72,7 @@ python hec_yeah.py --target both
 
 # Override Cribl settings via command line
 python hec_yeah.py --target cribl \
-  --cribl-http-url https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector \
+  --cribl-http-url https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector \
   --cribl-api-url https://api.cribl.cloud \
   --cribl-client-id your-client-id-here \
   --cribl-client-secret your-client-secret-here \
@@ -109,7 +109,7 @@ SPLUNK_PASSWORD=your-password      # Fallback
 ### For Cribl Testing (when TEST_TARGET=cribl or both)
 ```bash
 # Cribl HTTP Source endpoint
-CRIBL_HTTP_URL=https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector
+CRIBL_HTTP_URL=https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector
 CRIBL_API_URL=https://api.cribl.cloud
 CRIBL_CLIENT_ID=your-client-id-here
 CRIBL_CLIENT_SECRET=your-client-secret-here

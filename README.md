@@ -117,7 +117,7 @@ python hec_yeah.py
 
 #### Cribl Configuration (Required if TEST_TARGET=cribl or both)
 
-- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
+- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
 - **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
 - **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://api.cribl.cloud` for Cribl Cloud or `https://cribl.example.com:9000/api/v1` for self-hosted)
 - **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
@@ -240,7 +240,7 @@ python hec_yeah.py --target both
 **Override Cribl Settings:**
 ```bash
 python hec_yeah.py --target cribl \
-  --cribl-http-url https://<group-name>.<your-org-id>.cribl.cloud:<port>/services/collector \
+  --cribl-http-url https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector \
   --cribl-api-url https://api.cribl.cloud \
   --cribl-client-id "your-client-id-here" \
   --cribl-client-secret "your-client-secret-here" \
