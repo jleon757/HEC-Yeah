@@ -376,9 +376,9 @@ class HECTester:
         if not dns_ok:
             return False, f"Search API DNS Error: {dns_error}", None
 
-        # Build search query to count events by endpoint_type
+        # Build search query to count events
         index_clause = f"index={self.default_index}" if self.default_index else "index=*"
-        search_query = f'search {index_clause} test_id="{self.test_id}" | stats count by endpoint_type, index, sourcetype, source | addinfo'
+        search_query = f'search {index_clause} test_id="{self.test_id}" | stats count by index, sourcetype, source | addinfo'
 
         # Create search job
         search_url = f"{self.splunk_host}/services/search/jobs"
@@ -474,9 +474,9 @@ class HECTester:
         """Get detailed event information including timestamps and lag"""
         print(f"\n{Colors.BLUE}Retrieving detailed event information...{Colors.END}")
 
-        # Build detailed search query - group by endpoint_type to get separate stats for event vs raw
+        # Build detailed search query
         index_clause = f"index={self.default_index}" if self.default_index else "index=*"
-        search_query = f'search {index_clause} test_id="{self.test_id}" | eval lag=_indextime-_time | stats count, min(_time) as first_event, max(_time) as last_event, avg(lag) as avg_lag, values(index) as index, values(sourcetype) as sourcetype by endpoint_type'
+        search_query = f'search {index_clause} test_id="{self.test_id}" | eval lag=_indextime-_time | stats count, min(_time) as first_event, max(_time) as last_event, avg(lag) as avg_lag, values(index) as index, values(sourcetype) as sourcetype'
 
         search_url = f"{self.splunk_host}/services/search/jobs"
 
@@ -557,10 +557,10 @@ class HECTester:
             return False, f"Error getting event details: {str(e)}", None
 
     def run_test(self) -> bool:
-        """Run complete HEC test workflow for both endpoints"""
+        """Run complete HEC test workflow for event endpoint"""
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}HEC-Yeah: HEC Token & Connectivity Tester{Colors.END}")
-        print(f"{Colors.BOLD}Testing BOTH Event and Raw Endpoints{Colors.END}")
+        print(f"{Colors.BOLD}Testing Event Endpoint{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
 
         # Step 1: Test connectivity (using event endpoint)
@@ -570,11 +570,10 @@ class HECTester:
             print(f"{Colors.RED}Error: {error}{Colors.END}")
             return False
 
-        # Track results for both endpoints
+        # Track results
         event_results = {}
-        raw_results = {}
 
-        # Step 2-3: Test EVENT endpoint (/services/collector)
+        # Step 2: Test EVENT endpoint (/services/collector)
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}TESTING EVENT ENDPOINT (/services/collector){Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
@@ -586,112 +585,67 @@ class HECTester:
         event_results['success'] = success
         event_results['error'] = error
 
-        # Step 4-5: Test RAW endpoint (/services/collector/raw)
-        print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
-        print(f"{Colors.BOLD}TESTING RAW ENDPOINT (/services/collector/raw){Colors.END}")
-        print(f"{Colors.BOLD}{'='*60}{Colors.END}")
-
-        raw_events = self.generate_test_events('raw')
-        success, error, sent_events = self.send_events(raw_events, self.hec_raw_url, 'raw')
-        raw_results['sent'] = len(sent_events)
-        raw_results['total'] = self.num_events
-        raw_results['success'] = success
-        raw_results['error'] = error
-
-        # Step 6: Search for events (if at least one endpoint succeeded)
-        if event_results['success'] or raw_results['success']:
+        # Step 3: Search for events (if send succeeded)
+        if event_results['success']:
             success, error, results = self.search_events()
             if not success:
                 print(f"\n{Colors.YELLOW}Warning: Could not search for events{Colors.END}")
                 print(f"{Colors.YELLOW}{error}{Colors.END}")
-                details_list = []
+                event_results['found'] = 0
             else:
                 # Get detailed event information
                 success, error, details_list = self.get_event_details()
                 if not success:
                     print(f"\n{Colors.YELLOW}Warning: Could not retrieve detailed event information{Colors.END}")
                     print(f"{Colors.YELLOW}{error}{Colors.END}")
-                    details_list = []
-
-            # Process results by endpoint type
-            if isinstance(details_list, list):
-                for details in details_list:
-                    endpoint_type = details.get('endpoint_type', 'unknown')
-                    if endpoint_type == 'event':
+                    event_results['found'] = 0
+                else:
+                    # Process results
+                    if isinstance(details_list, list) and len(details_list) > 0:
+                        details = details_list[0]
                         event_results['found'] = int(details.get('count', 0))
                         event_results['details'] = details
-                    elif endpoint_type == 'raw':
-                        raw_results['found'] = int(details.get('count', 0))
-                        raw_results['details'] = details
-            elif isinstance(details_list, dict):
-                # Single result - check endpoint_type
-                endpoint_type = details_list.get('endpoint_type', 'unknown')
-                if endpoint_type == 'event':
-                    event_results['found'] = int(details_list.get('count', 0))
-                    event_results['details'] = details_list
-                elif endpoint_type == 'raw':
-                    raw_results['found'] = int(details_list.get('count', 0))
-                    raw_results['details'] = details_list
+                    elif isinstance(details_list, dict):
+                        event_results['found'] = int(details_list.get('count', 0))
+                        event_results['details'] = details_list
+                    else:
+                        event_results['found'] = 0
+        else:
+            event_results['found'] = 0
 
-            # Set defaults for endpoints with no search results
-            if 'found' not in event_results:
-                event_results['found'] = 0
-            if 'found' not in raw_results:
-                raw_results['found'] = 0
-
-        # Step 7: Display results
+        # Step 4: Display results
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}TEST RESULTS{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"Test ID: {Colors.BOLD}{self.test_id}{Colors.END}\n")
 
         # Event endpoint results
-        print(f"{Colors.BOLD}EVENT Endpoint (/services/collector):{Colors.END}")
         if event_results['success']:
-            print(f"  {Colors.GREEN}✓ Sent: {event_results['sent']}/{event_results['total']} events{Colors.END}")
-            if 'found' in event_results:
-                found = event_results['found']
-                if found == event_results['total']:
-                    print(f"  {Colors.GREEN}✓ Found: {found}/{event_results['total']} events{Colors.END}")
-                elif found > 0:
-                    print(f"  {Colors.YELLOW}⚠ Found: {found}/{event_results['total']} events{Colors.END}")
-                else:
-                    print(f"  {Colors.RED}✗ Found: 0/{event_results['total']} events{Colors.END}")
+            sent_pct = (event_results['sent'] / event_results['total'] * 100) if event_results['total'] > 0 else 0
+            print(f"  {Colors.GREEN}✓ Sent: {event_results['sent']}/{event_results['total']} events ({sent_pct:.0f}%){Colors.END}")
 
-                if 'details' in event_results:
-                    self._print_endpoint_details(event_results['details'])
+            found = event_results.get('found', 0)
+            if found == event_results['total']:
+                found_pct = (found / event_results['total'] * 100) if event_results['total'] > 0 else 0
+                print(f"  {Colors.GREEN}✓ Found: {found}/{event_results['total']} events ({found_pct:.0f}%){Colors.END}")
+            elif found > 0:
+                found_pct = (found / event_results['total'] * 100) if event_results['total'] > 0 else 0
+                print(f"  {Colors.YELLOW}⚠ Found: {found}/{event_results['total']} events ({found_pct:.0f}%){Colors.END}")
+            else:
+                print(f"  {Colors.RED}✗ Found: 0/{event_results['total']} events (0%){Colors.END}")
+
+            if 'details' in event_results:
+                self._print_endpoint_details(event_results['details'])
         else:
             print(f"  {Colors.RED}✗ Failed to send events{Colors.END}")
             print(f"  {Colors.RED}Error: {event_results['error']}{Colors.END}")
 
-        print()
-
-        # Raw endpoint results
-        print(f"{Colors.BOLD}RAW Endpoint (/services/collector/raw):{Colors.END}")
-        if raw_results['success']:
-            print(f"  {Colors.GREEN}✓ Sent: {raw_results['sent']}/{raw_results['total']} events{Colors.END}")
-            if 'found' in raw_results:
-                found = raw_results['found']
-                if found == raw_results['total']:
-                    print(f"  {Colors.GREEN}✓ Found: {found}/{raw_results['total']} events{Colors.END}")
-                elif found > 0:
-                    print(f"  {Colors.YELLOW}⚠ Found: {found}/{raw_results['total']} events{Colors.END}")
-                else:
-                    print(f"  {Colors.RED}✗ Found: 0/{raw_results['total']} events{Colors.END}")
-
-                if 'details' in raw_results:
-                    self._print_endpoint_details(raw_results['details'])
-        else:
-            print(f"  {Colors.RED}✗ Failed to send events{Colors.END}")
-            print(f"  {Colors.RED}Error: {raw_results['error']}{Colors.END}")
-
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}\n")
 
-        # Overall success if both endpoints sent AND found all events
+        # Overall success if events sent AND found all events
         event_success = event_results.get('success', False) and event_results.get('found', 0) == event_results['total']
-        raw_success = raw_results.get('success', False) and raw_results.get('found', 0) == raw_results['total']
 
-        return event_success and raw_success
+        return event_success
 
     def _print_endpoint_details(self, details: Dict):
         """Helper method to print endpoint-specific details"""
@@ -880,7 +834,7 @@ class CriblTester:
 
 
     def run_test(self) -> bool:
-        """Run complete Cribl test workflow - tests both event and raw endpoints"""
+        """Run complete Cribl test workflow - tests event endpoint"""
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}Cribl HTTP Source Connectivity Test{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
@@ -891,14 +845,8 @@ class CriblTester:
         event_events = self.generate_test_events("event")
         event_success, event_error, event_sent = self.send_events(event_events, self.http_event_url, "event")
 
-        # Test RAW endpoint (/services/collector/raw)
-        print(f"\n{Colors.BOLD}Testing RAW endpoint (/services/collector/raw){Colors.END}")
-        raw_events = self.generate_test_events("raw")
-        raw_success, raw_error, raw_sent = self.send_events(raw_events, self.http_raw_url, "raw")
-
-        total_sent = event_sent + raw_sent
-        total_expected = self.num_events * 2  # Both endpoints
-        total_success_pct = (total_sent / total_expected * 100) if total_expected > 0 else 0
+        total_expected = self.num_events
+        total_success_pct = (event_sent / total_expected * 100) if total_expected > 0 else 0
 
         # Display results
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
@@ -906,17 +854,15 @@ class CriblTester:
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"Test ID: {self.test_id}")
 
-        if event_success and raw_success:
+        if event_success:
             print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
-            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent")
-            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent")
-            print(f"  Total: {total_sent}/{total_expected} events sent ({total_success_pct:.0f}%)")
+            print(f"  Sent: {event_sent}/{total_expected} events ({total_success_pct:.0f}%)")
             return True
         else:
             print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
-            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent" + (f" - {event_error}" if not event_success else ""))
-            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent" + (f" - {raw_error}" if not raw_success else ""))
-            print(f"  Total: {total_sent}/{total_expected} events sent ({total_success_pct:.0f}%)")
+            print(f"  Sent: {event_sent}/{total_expected} events ({total_success_pct:.0f}%)")
+            if event_error:
+                print(f"  Error: {event_error}")
             return False
 
 
@@ -1110,11 +1056,8 @@ def main():
         event_events = cribl_tester.generate_test_events("event")
         event_success, event_error, event_sent = cribl_tester.send_events(event_events, cribl_tester.http_event_url, "event")
 
-        raw_events = cribl_tester.generate_test_events("raw")
-        raw_success, raw_error, raw_sent = cribl_tester.send_events(raw_events, cribl_tester.http_raw_url, "raw")
-
-        total_sent_cribl = event_sent + raw_sent
-        cribl_success = event_success and raw_success
+        total_expected = num_events
+        cribl_success = event_success
 
         # Search in Splunk
         if cribl_success:
@@ -1133,37 +1076,33 @@ def main():
 
                 # Count total events found
                 total_found = 0
-                if isinstance(details_list, list):
-                    for details in details_list:
-                        total_found += int(details.get('count', 0))
+                if isinstance(details_list, list) and len(details_list) > 0:
+                    total_found = int(details_list[0].get('count', 0))
                 elif isinstance(details_list, dict):
                     total_found = int(details_list.get('count', 0))
 
-                total_expected = num_events * 2  # Both endpoints
                 success_pct = (total_found / total_expected * 100) if total_expected > 0 else 0
 
                 if total_found == total_expected:
                     print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
-                    print(f"  Sent to Cribl: {total_sent_cribl}/{total_expected} events")
+                    print(f"  Sent to Cribl: {event_sent}/{total_expected} events")
                     print(f"  Found in Splunk: {total_found}/{total_expected} events ({success_pct:.0f}%)")
                     overall_success = True
                 else:
                     print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
-                    print(f"  Sent to Cribl: {total_sent_cribl}/{total_expected} events")
+                    print(f"  Sent to Cribl: {event_sent}/{total_expected} events")
                     print(f"  Found in Splunk: {total_found}/{total_expected} events ({success_pct:.0f}%)")
                     overall_success = False
             else:
                 print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
-                print(f"  Sent to Cribl: {total_sent_cribl}/{num_events * 2} events")
+                print(f"  Sent to Cribl: {event_sent}/{total_expected} events")
                 print(f"  Search Error: {search_error}")
                 overall_success = False
         else:
             print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
             print(f"  Failed to send events to Cribl")
             if event_error:
-                print(f"  Event endpoint error: {event_error}")
-            if raw_error:
-                print(f"  Raw endpoint error: {raw_error}")
+                print(f"  Error: {event_error}")
             overall_success = False
 
     # Final summary

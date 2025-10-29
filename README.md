@@ -37,19 +37,16 @@ HEC-Yeah performs comprehensive testing of your Splunk HEC setup:
    - Token authentication
    - Permission validation
 
-2. **Event Delivery** - Tests BOTH HEC endpoints:
+2. **Event Delivery** - Tests HEC event endpoint:
    - `/services/collector` (Event endpoint - structured JSON)
-   - `/services/collector/raw` (Raw endpoint - JSON as raw data)
-   - Sends configurable number of events to each (default: 5 per endpoint)
+   - Sends configurable number of events (default: 5)
    - UUID-based test run identification
-   - Separate tracking for each endpoint type
 
 3. **Event Verification** - Searches Splunk to confirm event receipt:
-   - Validates all events were indexed for both endpoints
-   - Reports index and sourcetype information per endpoint
+   - Validates all events were indexed
+   - Reports index and sourcetype information
    - Captures first and last event timestamps
    - Calculates indexing lag (_indextime - _time)
-   - Separate results display for Event vs Raw endpoints
 
 4. **Detailed Error Reporting** - Provides specific diagnostics:
    - DNS resolution failures
@@ -136,7 +133,7 @@ python hec_yeah.py
 
 #### General Configuration
 
-- **NUM_EVENTS**: (Optional) Number of test events to send per endpoint (default: 5)
+- **NUM_EVENTS**: (Optional) Number of test events to send (default: 5)
 
 ### Generating Cribl API Credentials
 
