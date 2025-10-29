@@ -199,20 +199,19 @@ python hec_yeah.py \
 ### Available Arguments
 
 #### Target Selection
-- `--target`: Target system to test (`splunk`, `cribl`, or `both`)
+- `--target`: Target system to test - choose one of:
+  - `splunk` - Test Splunk HEC directly (send to Splunk, verify in Splunk)
+  - `cribl` - Test Cribl connectivity only (send to Cribl, verify HTTP response)
+  - `cribl_to_splunk` - Test Cribl→Splunk pipeline (send to Cribl, verify in Splunk)
 
 #### Cribl Arguments
 - `--cribl-http-url`: Cribl HTTP Source endpoint URL (overrides .env)
-- `--cribl-http-token`: Cribl HTTP Source auth token (overrides .env)
-- `--cribl-api-url`: Cribl REST API base URL (overrides .env)
-- `--cribl-client-id`: Cribl API client ID (overrides .env)
-- `--cribl-client-secret`: Cribl API client secret (overrides .env)
-- `--cribl-worker-group`: Cribl worker group to check logs (overrides .env)
+- `--cribl-http-token`: Cribl HTTP Source auth token (optional, overrides .env)
 
 #### Splunk Arguments
 - `--hec-url`: HEC endpoint URL (overrides .env)
 - `--hec-token`: HEC token (overrides .env)
-- `--splunk-host`: Splunk host URL for search API (overrides .env)
+- `--splunk-host`: Splunk management API URL with port 8089 (overrides .env)
 - `--splunk-username`: Splunk username (overrides .env)
 - `--splunk-token`: Splunk bearer token for authentication (overrides .env)
 - `--splunk-password`: Splunk password for authentication (overrides .env)
@@ -222,25 +221,33 @@ python hec_yeah.py \
 - `--num-events`: Number of test events to send (default: 5)
 - `--wait-time`: Seconds to wait before searching (default: 10)
 
-### Testing Cribl
+## Testing Modes
 
-**Test Cribl Only:**
+### Mode 1: Test Splunk Only
+Tests Splunk HEC directly - sends events to Splunk and verifies they were indexed:
+```bash
+python hec_yeah.py --target splunk
+# or just:
+python hec_yeah.py  # splunk is the default
+```
+
+### Mode 2: Test Cribl Only
+Tests Cribl HTTP Source connectivity - sends events to Cribl and verifies HTTP response:
 ```bash
 python hec_yeah.py --target cribl
 ```
 
-**Test Both Cribl and Splunk:**
+### Mode 3: Test Cribl → Splunk Pipeline
+Sends events to Cribl and verifies they arrive in Splunk:
 ```bash
-python hec_yeah.py --target both
+python hec_yeah.py --target cribl_to_splunk
 ```
 
-**Override Cribl Settings:**
+**Override settings for Cribl:**
 ```bash
-python hec_yeah.py --target cribl \
-  --cribl-http-url https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector \
-  --cribl-api-url https://api.cribl.cloud \
-  --cribl-client-id "your-client-id-here" \
-  --cribl-client-secret "your-client-secret-here" \
+python hec_yeah.py --target cribl_to_splunk \
+  --cribl-http-url https://default.main.<org-id>.cribl.cloud:10080/services/collector \
+  --cribl-http-token "your-cribl-token" \
   --num-events 10
 ```
 
