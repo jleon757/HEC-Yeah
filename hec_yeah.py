@@ -383,9 +383,6 @@ class HECTester:
         # Create search job
         search_url = f"{self.splunk_host}/services/search/jobs"
 
-        print(f"{Colors.YELLOW}DEBUG: Search URL: {search_url}{Colors.END}")
-        print(f"{Colors.YELLOW}DEBUG: Search query: {search_query}{Colors.END}")
-
         try:
             # Create search job with authentication
             response, auth_error = self._make_authenticated_request(
@@ -404,8 +401,6 @@ class HECTester:
             elif response.status_code == 403:
                 return False, "Search API Authorization Failed: User does not have permission to run searches", None
             elif response.status_code != 201:
-                print(f"{Colors.RED}DEBUG: Response status: {response.status_code}{Colors.END}")
-                print(f"{Colors.RED}DEBUG: Response body: {response.text}{Colors.END}")
                 return False, f"Failed to create search job: HTTP {response.status_code} - {response.text}", None
 
             # Get search job ID
@@ -480,8 +475,6 @@ class HECTester:
 
         search_url = f"{self.splunk_host}/services/search/jobs"
 
-        print(f"{Colors.YELLOW}DEBUG: Detail search URL: {search_url}{Colors.END}")
-
         try:
             # Create search job with authentication
             response, auth_error = self._make_authenticated_request(
@@ -496,8 +489,6 @@ class HECTester:
                 return False, f"Failed to create detail search job: {auth_error}", None
 
             if response.status_code != 201:
-                print(f"{Colors.RED}DEBUG: Detail search response status: {response.status_code}{Colors.END}")
-                print(f"{Colors.RED}DEBUG: Detail search response body: {response.text}{Colors.END}")
                 return False, f"Failed to create detail search job: HTTP {response.status_code}", None
 
             job_sid = response.json()['sid']
