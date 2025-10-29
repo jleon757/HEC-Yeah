@@ -973,7 +973,7 @@ def main():
     overall_success = True
 
     # Test Splunk if requested
-    if test_target in ['splunk', 'both']:
+    if test_target == 'splunk':
         print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
         print(f"{Colors.BOLD}TESTING TARGET: SPLUNK{Colors.END}")
         print(f"{Colors.BOLD}{'='*70}{Colors.END}")
