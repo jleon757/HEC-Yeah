@@ -1,6 +1,6 @@
 # HEC-Yeah Quick Reference
 
-A tool for testing HTTP Event Collector (HEC) connectivity to **Cribl** and **Splunk**.
+A tool for testing HTTP Event Collector (HEC) connectivity to **Cribl**, **Splunk**, and **Cribl→Splunk pipelines**.
 
 ## One-Time Setup
 
@@ -34,12 +34,11 @@ venv\Scripts\activate
 python hec_yeah.py
 ```
 
-## Common Commands
+## Testing Modes
 
-### Testing Splunk (Default)
-
+### Test Splunk Only (Default)
 ```bash
-# Basic test with default settings (5 events per endpoint)
+# Basic test with default settings (5 events)
 python hec_yeah.py
 
 # Test with 10 events
@@ -50,95 +49,84 @@ python hec_yeah.py --wait-time 20
 
 # Test specific index
 python hec_yeah.py --index myindex
-
-# Override Splunk settings via command line (token auth - preferred)
-python hec_yeah.py \
-  --hec-url https://splunk.example.com:8088/services/collector \
-  --hec-token ABC123... \
-  --splunk-host https://splunk.example.com:8089 \
-  --splunk-username admin \
-  --splunk-token XYZ789... \
-  --num-events 10
 ```
 
-### Testing Cribl
-
+### Test Cribl Only
 ```bash
-# Test Cribl only
+# Test Cribl HTTP Source connectivity
 python hec_yeah.py --target cribl
 
-# Test both Cribl and Splunk
-python hec_yeah.py --target both
-
-# Override Cribl settings via command line
+# Override Cribl settings
 python hec_yeah.py --target cribl \
-  --cribl-http-url https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector \
-  --cribl-api-url https://api.cribl.cloud \
-  --cribl-client-id your-client-id-here \
-  --cribl-client-secret your-client-secret-here \
-  --num-events 10
+  --cribl-hec-url https://default.main.<org-id>.cribl.cloud:10080/services/collector \
+  --cribl-hec-token your-token-here
 ```
 
-### Help
-
+### Test Cribl → Splunk Pipeline
 ```bash
-# Show all available options
-python hec_yeah.py --help
+# Send to Cribl, verify in Splunk
+python hec_yeah.py --target cribl_to_splunk
+
+# Override settings
+python hec_yeah.py --target cribl_to_splunk \
+  --cribl-hec-url https://default.main.<org-id>.cribl.cloud:10080/services/collector \
+  --num-events 10 \
+  --wait-time 20
 ```
 
 ## Required .env Variables
 
 ### Target Selection
 ```bash
-TEST_TARGET=splunk    # Options: splunk, cribl, both
+TEST_TARGET=splunk    # Options: splunk, cribl, cribl_to_splunk
 ```
 
-### For Splunk Testing (when TEST_TARGET=splunk or both)
+### For Cribl Testing (when TEST_TARGET=cribl or cribl_to_splunk)
 ```bash
-# Splunk HEC endpoint - this token is tested for event ingestion
+# Cribl HEC Endpoint
+CRIBL_HEC_URL=https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector
+
+# Cribl HEC Token (optional)
+CRIBL_HEC_TOKEN=your-cribl-hec-token-here
+```
+
+### For Splunk Testing (when TEST_TARGET=splunk or cribl_to_splunk)
+```bash
+# Splunk HEC Endpoint
 SPLUNK_HEC_URL=https://your-splunk:8088/services/collector
+
+# Splunk HEC Token
 SPLUNK_HEC_TOKEN=your-hec-token-here
+
+# Splunk Management/Search API URL (port 8089, not 8088)
 SPLUNK_HTTP_URL=https://your-splunk:8089
+
+# Splunk Search Username
 SPLUNK_USERNAME=your-username
 
-# Authentication: Use EITHER token (preferred) OR password
-SPLUNK_TOKEN=your-bearer-token     # Preferred
-SPLUNK_PASSWORD=your-password      # Fallback
-```
+# Splunk Bearer Token (preferred - for search API)
+SPLUNK_TOKEN=your-bearer-token
 
-### For Cribl Testing (when TEST_TARGET=cribl or both)
-```bash
-# Cribl HTTP Source endpoint
-CRIBL_HTTP_URL=https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector
-CRIBL_API_URL=https://api.cribl.cloud
-CRIBL_CLIENT_ID=your-client-id-here
-CRIBL_CLIENT_SECRET=your-client-secret-here
+# Splunk Password (alternative - not recommended for SAML/SSO)
+SPLUNK_PASSWORD=your-password
 ```
 
 ## Optional .env Variables
 
 ```bash
 DEFAULT_INDEX=main              # Splunk index (leave empty for default)
-NUM_EVENTS=5                    # Events to send per endpoint
-CRIBL_HEC_TOKEN=token           # Optional HEC token - tested to verify it can send events to Cribl
-CRIBL_WORKER_GROUP=default      # Worker group for distributed Cribl
+NUM_EVENTS=5                    # Number of events to send
 ```
-
-## Generate Cribl API Credentials
-
-1. Cribl UI → **Settings** → **API Credentials**
-2. Click **"Create New"**
-3. Copy client ID and secret to .env
 
 ## Authentication Methods
 
-**Token Authentication (Preferred):**
+**Splunk Token Authentication (Preferred):**
 - More secure, no password exposure
 - Set `SPLUNK_TOKEN` in .env
 - Tool tries token first if both are provided
 - **REQUIRED for SAML/SSO environments**
 
-**Password Authentication:**
+**Splunk Password Authentication:**
 - Traditional username/password
 - Set `SPLUNK_PASSWORD` in .env
 - Used if token not provided or token fails
@@ -155,28 +143,41 @@ CRIBL_WORKER_GROUP=default      # Worker group for distributed Cribl
 |-------|----------|
 | Permission denied (setup.sh) | `chmod +x setup.sh` |
 | Python not found | Install Python 3.x |
-| DNS resolution failed | Check SPLUNK_HEC_URL or CRIBL_HTTP_URL hostname |
-| Invalid HEC token | Verify token in Splunk |
-| Search API auth failed | Check username/password |
+| DNS resolution failed | Check SPLUNK_HEC_URL or CRIBL_HEC_URL hostname |
+| Invalid HEC token | Verify token in Splunk/Cribl |
+| Search API 404 error | Ensure SPLUNK_HTTP_URL includes port 8089 |
+| Search API auth failed | Check SPLUNK_USERNAME/TOKEN/PASSWORD |
 | No events found | Increase --wait-time |
+| Cribl→Splunk 0 events | Verify Cribl route to Splunk is configured |
 
 ## What Gets Tested
 
+**Splunk Mode:**
 1. DNS resolution
 2. HEC endpoint connectivity
 3. Token authentication
-4. Event delivery (N events)
+4. Event delivery
 5. Event indexing verification
 6. Indexing lag calculation
-7. Metadata collection (index, sourcetype)
+7. Metadata collection
+
+**Cribl Mode:**
+1. HTTP Source connectivity
+2. Token authentication (if provided)
+3. Event acceptance via HTTP response
+
+**Cribl→Splunk Mode:**
+1. Send events to Cribl HTTP Source
+2. Verify events arrive in Splunk
+3. End-to-end pipeline validation
 
 ## Output Includes
 
 - Test ID (UUID)
-- Events sent count
-- Events found count
-- First/last event timestamps
-- Average indexing lag
+- Events sent count with percentage
+- Events found count with percentage
+- First/last event timestamps (Splunk tests)
+- Average indexing lag (Splunk tests)
 - Index name
 - Sourcetype
 - Pass/fail status

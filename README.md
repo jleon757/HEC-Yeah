@@ -114,17 +114,17 @@ python hec_yeah.py
 
 #### Cribl Configuration (Required if TEST_TARGET=cribl or cribl_to_splunk)
 
-- **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
-- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication
+- **CRIBL_HEC_URL**: Cribl HEC endpoint URL (e.g., `https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector` for Cribl Cloud or `http://cribl.example.com:10080/services/collector` for self-hosted)
+- **CRIBL_HEC_TOKEN**: (Optional) HEC token for authentication
 
 #### Splunk Configuration (Required if TEST_TARGET=splunk or cribl_to_splunk)
 
-- **SPLUNK_HEC_URL**: Splunk HEC endpoint URL (e.g., `https://splunk.example.com:8088/services/collector`) - this token is tested for event ingestion
-- **SPLUNK_HEC_TOKEN**: HEC authentication token - this token is tested to verify it can send events to Splunk
-- **SPLUNK_HTTP_URL**: Splunk management/search API URL (e.g., `https://splunk.example.com:8089`)
+- **SPLUNK_HEC_URL**: Splunk HEC endpoint URL (e.g., `https://splunk.example.com:8088/services/collector`)
+- **SPLUNK_HEC_TOKEN**: HEC token for sending events
+- **SPLUNK_HTTP_URL**: Splunk management/search API URL with port 8089 (e.g., `https://splunk.example.com:8089`)
 - **SPLUNK_USERNAME**: Username with search privileges
-- **SPLUNK_TOKEN**: (Optional) Splunk bearer token for authentication - **preferred method**
-- **SPLUNK_PASSWORD**: (Optional) Password for the search user - used if SPLUNK_TOKEN not provided
+- **SPLUNK_TOKEN**: (Optional) Bearer token for search API authentication - **preferred method**
+- **SPLUNK_PASSWORD**: (Optional) Password for search API - used if SPLUNK_TOKEN not provided
 - **DEFAULT_INDEX**: (Optional) Target index name - if not specified, uses Splunk default
 
 #### General Configuration
@@ -197,8 +197,8 @@ python hec_yeah.py \
   - `cribl_to_splunk` - Test Cribl→Splunk pipeline (send to Cribl, verify in Splunk)
 
 #### Cribl Arguments
-- `--cribl-http-url`: Cribl HTTP Source endpoint URL (overrides .env)
-- `--cribl-http-token`: Cribl HTTP Source auth token (optional, overrides .env)
+- `--cribl-hec-url`: Cribl HEC endpoint URL (overrides .env)
+- `--cribl-hec-token`: Cribl HEC token (optional, overrides .env)
 
 #### Splunk Arguments
 - `--hec-url`: HEC endpoint URL (overrides .env)
@@ -238,8 +238,8 @@ python hec_yeah.py --target cribl_to_splunk
 **Override settings for Cribl:**
 ```bash
 python hec_yeah.py --target cribl_to_splunk \
-  --cribl-http-url https://default.main.<org-id>.cribl.cloud:10080/services/collector \
-  --cribl-http-token "your-cribl-token" \
+  --cribl-hec-url https://default.main.<org-id>.cribl.cloud:10080/services/collector \
+  --cribl-hec-token "your-cribl-token" \
   --num-events 10
 ```
 
@@ -405,28 +405,16 @@ Event Details:
 
 ### Cribl Issues
 
-**"Authentication failed" to Cribl API**
-- Verify `CRIBL_CLIENT_ID` and `CRIBL_CLIENT_SECRET` are correct
-- Check that API credentials haven't been revoked in Cribl UI
-- Ensure `CRIBL_API_URL` includes `/api/v1` path (e.g., `https://cribl.example.com:9000/api/v1`)
-- Verify network connectivity to Cribl REST API port (typically 9000)
-
-**"Events sent but not found in logs"**
-- Increase wait time (events may take longer to appear in logs)
-- Check that HTTP Source is enabled and routing events correctly in Cribl
-- Verify `CRIBL_WORKER_GROUP` name is correct (for distributed deployments)
-- Manually check Cribl UI → Monitoring → Live Data to verify events are being processed
-- Check if log rotation occurred between sending and verification (use larger log files or test immediately)
-
-**"Cannot retrieve log files" or "Failed to get log files"**
-- Ensure `CRIBL_WORKER_GROUP` name is correct (use `default` for single-instance deployments)
-- Check API permissions for log file access
-- Verify REST API endpoint is accessible (port 9000 by default)
-- Try accessing the log endpoint manually: `GET /api/v1/system/logs`
-
 **"HTTP Source connection failed"**
-- Verify `CRIBL_HTTP_URL` is correct and includes the port
+- Verify `CRIBL_HEC_URL` is correct and includes the port
 - Check that HTTP Source is enabled in Cribl (Sources → HTTP)
+- Test connectivity manually using curl or similar tool
+
+**"Events sent to Cribl but not found in Splunk" (cribl_to_splunk mode)**
+- Verify Cribl has a route/pipeline configured to forward to Splunk
+- Check Cribl UI → Data → Routes to ensure route is enabled and deployed
+- Increase wait time (events may take longer to route through Cribl)
+- Manually check Cribl UI → Monitoring → Live Data to verify events are being processed
 - Ensure firewall allows connections to HTTP Source port (typically 10080)
 - If using token auth (`CRIBL_HEC_TOKEN`), verify token is configured correctly in HTTP Source settings
 - Test HTTP Source manually: `curl -X POST http://cribl.example.com:<port>/services/collector -d '{"test":"data"}'`

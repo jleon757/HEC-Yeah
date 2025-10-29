@@ -860,7 +860,7 @@ class CriblTester:
 def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: Optional[str],
                           splunk_host: Optional[str], splunk_username: Optional[str],
                           splunk_token: Optional[str], splunk_password: Optional[str],
-                          cribl_http_url: Optional[str]) -> Tuple[bool, Optional[str]]:
+                          cribl_hec_url: Optional[str]) -> Tuple[bool, Optional[str]]:
     """
     Validate configuration based on test target.
     Returns (is_valid, error_message)
@@ -887,8 +887,8 @@ def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: 
 
     # Validate Cribl configuration if needed
     if test_target in ['cribl', 'cribl_to_splunk']:
-        if not cribl_http_url:
-            errors.append("CRIBL_HTTP_URL not provided (required for Cribl testing)")
+        if not cribl_hec_url:
+            errors.append("CRIBL_HEC_URL not provided (required for Cribl testing)")
 
     if errors:
         return False, '\n'.join(errors)
@@ -920,10 +920,10 @@ def main():
     parser.add_argument('--index', help='Target index (overrides .env)')
 
     # Cribl HTTP Source arguments
-    parser.add_argument('--cribl-http-url',
-                        help='Cribl HTTP Source endpoint URL (overrides .env CRIBL_HTTP_URL)')
-    parser.add_argument('--cribl-http-token',
-                        help='Cribl HEC token for HTTP Source (overrides .env CRIBL_HEC_TOKEN)')
+    parser.add_argument('--cribl-hec-url',
+                        help='Cribl HEC endpoint URL (overrides .env CRIBL_HEC_URL)')
+    parser.add_argument('--cribl-hec-token',
+                        help='Cribl HEC token (overrides .env CRIBL_HEC_TOKEN)')
 
     # General arguments
     parser.add_argument('--num-events', type=int, help='Number of test events to send (default: 5)')
@@ -945,9 +945,9 @@ def main():
     splunk_password = args.splunk_password or os.getenv('SPLUNK_PASSWORD')
     default_index = args.index or os.getenv('DEFAULT_INDEX')
 
-    # Cribl HTTP Source configuration
-    cribl_http_url = args.cribl_http_url or os.getenv('CRIBL_HTTP_URL')
-    cribl_http_token = args.cribl_http_token or os.getenv('CRIBL_HEC_TOKEN') or os.getenv('CRIBL_HTTP_TOKEN')  # Backward compatibility
+    # Cribl HEC configuration
+    cribl_hec_url = args.cribl_hec_url or os.getenv('CRIBL_HEC_URL') or os.getenv('CRIBL_HTTP_URL')  # Backward compatibility
+    cribl_hec_token = args.cribl_hec_token or os.getenv('CRIBL_HEC_TOKEN')
 
     # General configuration
     num_events = args.num_events or int(os.getenv('NUM_EVENTS', '5'))
@@ -955,7 +955,7 @@ def main():
     # Validate configuration based on target
     is_valid, error_msg = validate_configuration(
         test_target, hec_url, hec_token, splunk_host, splunk_username,
-        splunk_token, splunk_password, cribl_http_url
+        splunk_token, splunk_password, cribl_hec_url
     )
 
     if not is_valid:
@@ -999,8 +999,8 @@ def main():
         print(f"{Colors.BOLD}{'='*70}{Colors.END}")
 
         cribl_tester = CriblTester(
-            http_url=cribl_http_url,
-            http_token=cribl_http_token if cribl_http_token else None,
+            http_url=cribl_hec_url,
+            http_token=cribl_hec_token if cribl_hec_token else None,
             num_events=num_events
         )
 
@@ -1015,8 +1015,8 @@ def main():
 
         # Create Cribl tester for sending
         cribl_tester = CriblTester(
-            http_url=cribl_http_url,
-            http_token=cribl_http_token if cribl_http_token else None,
+            http_url=cribl_hec_url,
+            http_token=cribl_hec_token if cribl_hec_token else None,
             num_events=num_events
         )
 
