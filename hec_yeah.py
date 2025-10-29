@@ -311,10 +311,25 @@ class HECTester:
                     )
                 else:
                     # Send as JSON string for raw endpoint
+                    # For raw endpoint, metadata must be in URL parameters, not in the body
+                    params = {
+                        'sourcetype': 'hec_yeah_test',
+                        'source': 'hec-yeah-tool'
+                    }
+                    if self.default_index:
+                        params['index'] = self.default_index
+
+                    # Remove metadata from event body for raw endpoint
+                    event_copy = event.copy()
+                    event_copy.pop('sourcetype', None)
+                    event_copy.pop('source', None)
+                    event_copy.pop('index', None)
+
                     response = self.session.post(
                         endpoint_url,
                         headers=headers,
-                        data=json.dumps(event),
+                        params=params,
+                        data=json.dumps(event_copy),
                         verify=False,
                         timeout=30
                     )
@@ -809,10 +824,22 @@ class CriblTester:
                     )
                 else:
                     # Send as JSON string for raw endpoint
+                    # For raw endpoint, metadata must be in URL parameters, not in the body
+                    params = {
+                        'sourcetype': 'hec_yeah_test',
+                        'source': 'hec-yeah-tool'
+                    }
+
+                    # Remove metadata from event body for raw endpoint
+                    event_copy = event.copy()
+                    event_copy.pop('sourcetype', None)
+                    event_copy.pop('source', None)
+
                     response = self.session.post(
                         endpoint_url,
                         headers=headers,
-                        data=json.dumps(event),
+                        params=params,
+                        data=json.dumps(event_copy),
                         verify=False,
                         timeout=10
                     )
