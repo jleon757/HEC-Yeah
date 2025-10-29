@@ -296,6 +296,7 @@ class HECTester:
         }
 
         sent_events = []
+        failed_count = 0
 
         try:
             for i, event in enumerate(events, 1):
@@ -320,16 +321,32 @@ class HECTester:
 
                 if response.status_code == 200:
                     sent_events.append(event)
-                    print(f"{Colors.GREEN}✓{Colors.END} Event {i} sent successfully")
                 else:
-                    error_msg = f"Failed to send event {i}: HTTP {response.status_code} - {response.text}"
-                    print(f"{Colors.RED}✗{Colors.END} {error_msg}")
-                    return False, error_msg, sent_events
+                    failed_count += 1
+                    if failed_count == 1:  # Only print first error
+                        error_msg = f"Failed to send event {i}: HTTP {response.status_code} - {response.text}"
+                        print(f"{Colors.RED}✗{Colors.END} {error_msg}")
 
-            print(f"{Colors.GREEN}✓ All {len(events)} events sent successfully to {endpoint_type} endpoint{Colors.END}")
-            return True, None, sent_events
+            # Print summary
+            success_count = len(sent_events)
+            total_count = len(events)
+            success_pct = (success_count / total_count * 100) if total_count > 0 else 0
+
+            if success_count == total_count:
+                print(f"{Colors.GREEN}✓ {success_count}/{total_count} events sent successfully ({success_pct:.0f}%){Colors.END}")
+                return True, None, sent_events
+            elif success_count > 0:
+                print(f"{Colors.YELLOW}⚠ {success_count}/{total_count} events sent successfully ({success_pct:.0f}%){Colors.END}")
+                return False, f"Only {success_count} of {total_count} events sent", sent_events
+            else:
+                print(f"{Colors.RED}✗ 0/{total_count} events sent (0%){Colors.END}")
+                return False, "All events failed to send", sent_events
 
         except Exception as e:
+            success_count = len(sent_events)
+            total_count = len(events)
+            success_pct = (success_count / total_count * 100) if total_count > 0 else 0
+            print(f"{Colors.RED}✗ Error after {success_count}/{total_count} events ({success_pct:.0f}%): {str(e)}{Colors.END}")
             return False, f"Error sending events to {endpoint_type} endpoint: {str(e)}", sent_events
 
     def search_events(self, wait_time: int = 10) -> Tuple[bool, Optional[str], Optional[Dict]]:
@@ -670,62 +687,21 @@ class HECTester:
 
 
 class CriblTester:
-    """Class for testing Cribl HTTP Source and verifying via internal logs"""
+    """Class for testing Cribl HTTP Source connectivity via HTTP response"""
 
-    def __init__(self, http_url: str, http_token: Optional[str],
-                 api_url: str, client_id: str, client_secret: str,
-                 worker_group: str = 'default', num_events: int = 5):
+    def __init__(self, http_url: str, http_token: Optional[str], num_events: int = 5):
         """
         Initialize Cribl tester
 
         Args:
             http_url: Cribl HTTP Source endpoint URL (base URL or full path)
             http_token: Optional auth token for HTTP Source
-            api_url: Cribl REST API base URL
-            client_id: API client ID
-            client_secret: API client secret
-            worker_group: Worker group to check logs for
             num_events: Number of test events to send
         """
         self.http_token = http_token
-        self.api_url = api_url
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.worker_group = worker_group
         self.num_events = num_events
         self.test_id = str(uuid.uuid4())
         self.session = self._create_session()
-        self.access_token = None
-        self.token_expiry = None
-
-        # Detect if using Cribl Cloud (needs /api/v1 prefix for endpoints)
-        self.is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
-
-        # Extract workspace name and API base URL from HTTP URL for Cribl Cloud
-        # URL pattern: https://<workspaceName>.main.<organizationId>.cribl.cloud:<port>
-        # For Cribl Cloud, the system logs API uses the workspace URL, not api.cribl.cloud
-        self.cribl_workspace = None
-        self.cribl_logs_api_base = self.api_url  # Default to provided api_url
-
-        if self.is_cribl_cloud and 'cribl.cloud' in http_url.lower():
-            try:
-                # Extract hostname from URL
-                from urllib.parse import urlparse
-                parsed = urlparse(http_url)
-                hostname = parsed.hostname or ''
-                # Split by dots: e.g., default.main.happy-elgamal-foi6wsh.cribl.cloud
-                parts = hostname.split('.')
-                if len(parts) > 0 and parts[-2] == 'cribl' and parts[-1] == 'cloud':
-                    self.cribl_workspace = parts[0]
-                    # For REST API, remove workspace prefix from hostname
-                    # HEC: default.main.happy-elgamal-foi6wsh.cribl.cloud:10080
-                    # API: main.happy-elgamal-foi6wsh.cribl.cloud (no workspace prefix, no port)
-                    api_hostname = '.'.join(parts[1:])  # Remove first part (workspace)
-                    self.cribl_logs_api_base = f"{parsed.scheme}://{api_hostname}"
-                    print(f"{Colors.YELLOW}Detected Cribl Cloud workspace: {self.cribl_workspace}{Colors.END}")
-                    print(f"{Colors.YELLOW}Using logs API base: {self.cribl_logs_api_base}{Colors.END}")
-            except Exception as e:
-                print(f"{Colors.YELLOW}Warning: Could not extract workspace from HTTP URL: {e}{Colors.END}")
 
         # Derive both endpoint URLs from base HTTP URL
         # Remove /services/collector or /services/collector/raw if present
@@ -745,167 +721,6 @@ class CriblTester:
         session.mount('http://', adapter)
         session.mount('https://', adapter)
         return session
-
-    def _authenticate(self) -> Tuple[bool, Optional[str]]:
-        """
-        Authenticate to Cribl API using client credentials.
-        Supports both Cribl Cloud and Cribl Stream (self-hosted) authentication.
-        Stores access token for subsequent requests.
-
-        Returns:
-            (success, error_message)
-        """
-        auth_errors = []
-
-        # Detect if using Cribl Cloud based on api_url
-        is_cribl_cloud = 'cribl.cloud' in self.api_url.lower()
-
-        try:
-            if is_cribl_cloud:
-                # Method 1: Cribl Cloud OAuth2 authentication
-                auth_url = "https://login.cribl.cloud/oauth/token"
-
-                payload = {
-                    "grant_type": "client_credentials",
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "audience": "https://api.cribl.cloud"
-                }
-
-                response = self.session.post(
-                    auth_url,
-                    json=payload,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=10,
-                    verify=True  # Cribl Cloud uses valid SSL
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    self.access_token = data.get('access_token')
-                    if self.access_token:
-                        # Cribl Cloud tokens expire in 24 hours (86400 seconds)
-                        expires_in = data.get('expires_in', 86400)
-                        self.token_expiry = time.time() + expires_in
-                        print(f"{Colors.GREEN}✓ Authenticated to Cribl Cloud{Colors.END}")
-                        return True, None
-                    else:
-                        auth_errors.append(f"Cribl Cloud: Success but no access_token in response: {data}")
-                else:
-                    auth_errors.append(f"Cribl Cloud OAuth2: HTTP {response.status_code} - {response.text}")
-
-            else:
-                # Method 2: Cribl Stream (self-hosted) authentication
-                # Normalize the auth URL - ensure it doesn't have duplicate /api/v1
-                if '/api/v1' in self.api_url:
-                    base_url = self.api_url.split('/api/v1')[0]
-                else:
-                    base_url = self.api_url.rstrip('/')
-
-                auth_url = f"{base_url}/api/v1/auth/login"
-
-                # Try username/password JSON authentication
-                payload = {
-                    "username": self.client_id,
-                    "password": self.client_secret
-                }
-
-                response = self.session.post(
-                    auth_url,
-                    json=payload,
-                    timeout=10,
-                    verify=False
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    self.access_token = data.get('token') or data.get('access_token')
-                    if self.access_token:
-                        self.token_expiry = time.time() + 3600
-                        print(f"{Colors.GREEN}✓ Authenticated to Cribl Stream{Colors.END}")
-                        return True, None
-                    else:
-                        auth_errors.append(f"Cribl Stream: Success but no token in response: {data}")
-                else:
-                    auth_errors.append(f"Cribl Stream (username/password): HTTP {response.status_code} - {response.text}")
-
-        except requests.exceptions.Timeout:
-            auth_errors.append("Authentication request timed out")
-        except Exception as e:
-            auth_errors.append(f"Authentication error: {str(e)}")
-
-        # Authentication failed
-        error_details = "\n  ".join(auth_errors)
-
-        if is_cribl_cloud:
-            guidance = (
-                f"\n\nPlease verify:\n"
-                f"  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n"
-                f"  2. Credentials have not been revoked in Cribl Cloud\n"
-                f"  3. CRIBL_API_URL should be: https://api.cribl.cloud\n"
-                f"  4. Generate credentials at: https://manage.cribl.cloud → Settings → API Credentials"
-            )
-        else:
-            guidance = (
-                f"\n\nPlease verify:\n"
-                f"  1. CRIBL_CLIENT_ID and CRIBL_CLIENT_SECRET are correct\n"
-                f"  2. Credentials have not been revoked in Cribl UI\n"
-                f"  3. CRIBL_API_URL is correct (should be https://your-instance:9000/api/v1)\n"
-                f"  4. Generate credentials in Cribl: Settings → API Credentials"
-            )
-
-        return False, f"Authentication failed:\n  {error_details}{guidance}"
-
-    def _ensure_authenticated(self) -> Tuple[bool, Optional[str]]:
-        """Ensure we have a valid access token"""
-        if not self.access_token or (self.token_expiry and time.time() >= self.token_expiry):
-            return self._authenticate()
-        return True, None
-
-    def _make_api_request(self, method: str, endpoint: str, **kwargs) -> Tuple[Optional[requests.Response], Optional[str]]:
-        """
-        Make authenticated request to Cribl API
-
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint path (e.g., '/system/logs')
-            **kwargs: Additional arguments for requests
-
-        Returns:
-            (response, error_message)
-        """
-        # Ensure authenticated
-        success, error = self._ensure_authenticated()
-        if not success:
-            return None, error
-
-        # Prepare headers
-        headers = kwargs.pop('headers', {})
-        headers['Authorization'] = f'Bearer {self.access_token}'
-        headers['Content-Type'] = 'application/json'
-
-        # Determine base URL - use workspace URL for system/logs endpoints on Cribl Cloud
-        if self.is_cribl_cloud and '/system/logs' in endpoint:
-            base_url = self.cribl_logs_api_base
-        else:
-            base_url = self.api_url
-
-        # Make request
-        url = f"{base_url}{endpoint}"
-        try:
-            response = self.session.request(
-                method,
-                url,
-                headers=headers,
-                timeout=30,
-                verify=False,
-                **kwargs
-            )
-            return response, None
-        except requests.exceptions.Timeout:
-            return None, f"Request to {endpoint} timed out"
-        except Exception as e:
-            return None, f"Request error: {str(e)}"
 
     def generate_test_events(self, endpoint_type: str) -> List[Dict]:
         """Generate test events for Cribl for specific endpoint type
@@ -964,6 +779,8 @@ class CriblTester:
         print(f"Test ID: {Colors.BOLD}{self.test_id}{Colors.END}")
 
         sent_count = 0
+        failed_count = 0
+        first_error = None
         headers = {'Content-Type': 'application/json'}
 
         # Add auth token if provided
@@ -992,276 +809,85 @@ class CriblTester:
                     )
 
                 if response.status_code in [200, 201, 204]:
-                    print(f"  {Colors.GREEN}✓{Colors.END} Event {i}/{len(events)} sent successfully")
                     sent_count += 1
                 else:
-                    print(f"  {Colors.RED}✗{Colors.END} Event {i}/{len(events)} failed: HTTP {response.status_code}")
-                    return False, f"Event {i} failed with HTTP {response.status_code}: {response.text}", sent_count
+                    failed_count += 1
+                    if not first_error:  # Store first error for reporting
+                        first_error = f"Event {i} failed with HTTP {response.status_code}: {response.text}"
 
             except requests.exceptions.Timeout:
-                return False, f"Event {i} timed out", sent_count
+                failed_count += 1
+                if not first_error:
+                    first_error = f"Event {i} timed out"
             except Exception as e:
-                return False, f"Event {i} error: {str(e)}", sent_count
+                failed_count += 1
+                if not first_error:
+                    first_error = f"Event {i} error: {str(e)}"
 
-        print(f"{Colors.GREEN}✓ All {sent_count} events sent successfully{Colors.END}")
-        return True, None, sent_count
+        # Print summary
+        total_count = len(events)
+        success_pct = (sent_count / total_count * 100) if total_count > 0 else 0
 
-    def get_log_files(self) -> Tuple[bool, Optional[str], List[Dict]]:
-        """
-        Get list of internal log files from Cribl
-
-        Returns:
-            (success, error_message, log_files_list)
-        """
-        # Cribl API endpoint for logs: GET /api/v1/system/logs (Cloud) or /system/logs (self-hosted)
-        # For distributed: /api/v1/m/{worker_group}/system/logs
-
-        # Build endpoint based on environment
-        if self.is_cribl_cloud:
-            # Cribl Cloud uses /api/v1/system/logs (no /m/<workspace>/ prefix)
-            endpoint = "/api/v1/system/logs"
+        if sent_count == total_count:
+            print(f"{Colors.GREEN}✓ {sent_count}/{total_count} events sent successfully ({success_pct:.0f}%){Colors.END}")
+            return True, None, sent_count
+        elif sent_count > 0:
+            print(f"{Colors.YELLOW}⚠ {sent_count}/{total_count} events sent successfully ({success_pct:.0f}%){Colors.END}")
+            if first_error:
+                print(f"{Colors.RED}  First error: {first_error}{Colors.END}")
+            return False, first_error or f"Only {sent_count} of {total_count} events sent", sent_count
         else:
-            # Self-hosted: api_url already includes /api/v1
-            if self.worker_group and self.worker_group != 'default':
-                endpoint = f"/m/{self.worker_group}/system/logs"
-            else:
-                endpoint = "/system/logs"
+            print(f"{Colors.RED}✗ 0/{total_count} events sent (0%){Colors.END}")
+            if first_error:
+                print(f"{Colors.RED}  Error: {first_error}{Colors.END}")
+            return False, first_error or "All events failed to send", sent_count
 
-        response, error = self._make_api_request('GET', endpoint)
-
-        # Debug output
-        print(f"\n{Colors.YELLOW}DEBUG: Get log files{Colors.END}")
-        print(f"  API URL: {self.api_url}")
-        print(f"  Endpoint: {endpoint}")
-        print(f"  Full URL: {self.api_url}{endpoint}")
-        print(f"  Is Cribl Cloud: {self.is_cribl_cloud}")
-        print(f"  Worker Group: {self.worker_group}")
-
-        if error:
-            print(f"  {Colors.RED}Request error: {error}{Colors.END}")
-            return False, error, []
-
-        print(f"  Response status: {response.status_code}")
-
-        if response.status_code != 200:
-            print(f"  {Colors.RED}Response body: {response.text[:500]}{Colors.END}")
-            return False, f"Failed to get log files: HTTP {response.status_code}", []
-
-        try:
-            data = response.json()
-            print(f"  Response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
-            print(f"  Response (first 500 chars): {str(data)[:500]}")
-
-            # Response format may vary - typically returns array of log file objects
-            # Each object has: { filename, size, mtime, id, ... }
-            log_files = data.get('items', []) or data.get('logs', []) or data
-            print(f"  Log files found: {len(log_files) if isinstance(log_files, list) else 'not a list'}")
-            if isinstance(log_files, list) and len(log_files) > 0:
-                print(f"  First log file: {log_files[0]}")
-            return True, None, log_files
-        except Exception as e:
-            print(f"  {Colors.RED}Parse error: {str(e)}{Colors.END}")
-            return False, f"Error parsing log files response: {str(e)}", []
-
-    def get_log_file_content(self, log_file_id: str) -> Tuple[bool, Optional[str], str]:
-        """
-        Retrieve content of specific log file
-
-        Args:
-            log_file_id: Log file identifier
-
-        Returns:
-            (success, error_message, log_content)
-        """
-        # Endpoint: GET /api/v1/system/logs/{id} (Cloud) or /system/logs/{id} (self-hosted)
-
-        # Build endpoint based on environment
-        if self.is_cribl_cloud:
-            # Cribl Cloud uses /api/v1/system/logs/{id} (no /m/<workspace>/ prefix)
-            endpoint = f"/api/v1/system/logs/{log_file_id}"
-        else:
-            # Self-hosted: api_url already includes /api/v1
-            if self.worker_group and self.worker_group != 'default':
-                endpoint = f"/m/{self.worker_group}/system/logs/{log_file_id}"
-            else:
-                endpoint = f"/system/logs/{log_file_id}"
-
-        response, error = self._make_api_request('GET', endpoint)
-
-        # Debug output
-        print(f"\n{Colors.YELLOW}DEBUG: Get log file content{Colors.END}")
-        print(f"  Log file ID: {log_file_id}")
-        print(f"  Endpoint: {endpoint}")
-        print(f"  Full URL: {self.api_url}{endpoint}")
-
-        if error:
-            print(f"  {Colors.RED}Request error: {error}{Colors.END}")
-            return False, error, ""
-
-        print(f"  Response status: {response.status_code}")
-
-        if response.status_code != 200:
-            print(f"  {Colors.RED}Response body: {response.text[:500]}{Colors.END}")
-            return False, f"Failed to get log content: HTTP {response.status_code}", ""
-
-        # Log content is typically returned as text
-        print(f"  Content length: {len(response.text)} characters")
-        print(f"  Content preview (first 500 chars): {response.text[:500]}")
-        return True, None, response.text
-
-    def find_relevant_log_file(self, log_files: List[Dict]) -> Optional[str]:
-        """
-        Find the most recent/relevant log file to check for events.
-        Typically cribl.log or the most recent log file.
-
-        Args:
-            log_files: List of log file objects
-
-        Returns:
-            log_file_id or None
-        """
-        if not log_files:
-            return None
-
-        # Look for cribl.log first (main log file)
-        for log in log_files:
-            filename = log.get('filename', '') or log.get('name', '')
-            if 'cribl.log' in filename.lower() and '.gz' not in filename:
-                return log.get('id') or log.get('filename')
-
-        # Fall back to most recent log file
-        # Sort by modification time (mtime) descending
-        sorted_logs = sorted(
-            log_files,
-            key=lambda x: x.get('mtime', 0) or x.get('modified', 0),
-            reverse=True
-        )
-
-        if sorted_logs:
-            return sorted_logs[0].get('id') or sorted_logs[0].get('filename')
-
-        return None
-
-    def verify_events_in_logs(self) -> Tuple[bool, Optional[str], Dict]:
-        """
-        Verify that test events appear in Cribl internal logs
-
-        Returns:
-            (success, error_message, results_dict)
-        """
-        print(f"\n{Colors.BLUE}Verifying events in Cribl internal logs...{Colors.END}")
-
-        # Step 1: Get list of log files
-        success, error, log_files = self.get_log_files()
-        if not success:
-            return False, f"Failed to get log files: {error}", {}
-
-        print(f"  Found {len(log_files)} log files")
-
-        # Step 2: Find relevant log file
-        log_file_id = self.find_relevant_log_file(log_files)
-        if not log_file_id:
-            return False, "Could not find relevant log file", {}
-
-        print(f"  Checking log file: {log_file_id}")
-
-        # Step 3: Get log file content
-        success, error, log_content = self.get_log_file_content(log_file_id)
-        if not success:
-            return False, f"Failed to get log content: {error}", {}
-
-        # Step 4: Search for test_id in log content
-        # Count occurrences of our test_id
-        occurrences = log_content.count(self.test_id)
-
-        results = {
-            'log_file': log_file_id,
-            'test_id': self.test_id,
-            'occurrences': occurrences,
-            'expected': self.num_events,
-            'found': occurrences >= self.num_events
-        }
-
-        if occurrences >= self.num_events:
-            print(f"{Colors.GREEN}✓ Found {occurrences} references to test ID in logs{Colors.END}")
-            return True, None, results
-        else:
-            print(f"{Colors.YELLOW}⚠ Found {occurrences} references, expected at least {self.num_events}{Colors.END}")
-            return False, f"Only found {occurrences} event references in logs", results
 
     def run_test(self) -> bool:
         """Run complete Cribl test workflow - tests both event and raw endpoints"""
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
-        print(f"{Colors.BOLD}Cribl HTTP Source & Log Verification Test{Colors.END}")
+        print(f"{Colors.BOLD}Cribl HTTP Source Connectivity Test{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"Test ID: {self.test_id}")
 
-        # Step 1: Authenticate to API
-        print(f"\n{Colors.BLUE}Authenticating to Cribl API...{Colors.END}")
-        success, error = self._authenticate()
-        if not success:
-            print(f"{Colors.RED}✗ Authentication failed: {error}{Colors.END}")
-            return False
-        print(f"{Colors.GREEN}✓ Authentication successful{Colors.END}")
-
-        # Step 2: Test EVENT endpoint (/services/collector)
+        # Test EVENT endpoint (/services/collector)
         print(f"\n{Colors.BOLD}Testing EVENT endpoint (/services/collector){Colors.END}")
         event_events = self.generate_test_events("event")
         event_success, event_error, event_sent = self.send_events(event_events, self.http_event_url, "event")
-        if not event_success:
-            print(f"{Colors.RED}✗ EVENT endpoint failed: {event_error}{Colors.END}")
-            return False
 
-        # Step 3: Test RAW endpoint (/services/collector/raw)
+        # Test RAW endpoint (/services/collector/raw)
         print(f"\n{Colors.BOLD}Testing RAW endpoint (/services/collector/raw){Colors.END}")
         raw_events = self.generate_test_events("raw")
         raw_success, raw_error, raw_sent = self.send_events(raw_events, self.http_raw_url, "raw")
-        if not raw_success:
-            print(f"{Colors.RED}✗ RAW endpoint failed: {raw_error}{Colors.END}")
-            return False
 
         total_sent = event_sent + raw_sent
         total_expected = self.num_events * 2  # Both endpoints
+        total_success_pct = (total_sent / total_expected * 100) if total_expected > 0 else 0
 
-        # Step 4: Wait for events to be processed
-        wait_time = 10
-        print(f"\n{Colors.YELLOW}Waiting {wait_time} seconds for events to be processed...{Colors.END}")
-        time.sleep(wait_time)
-
-        # Step 5: Verify events in logs
-        success, error, results = self.verify_events_in_logs()
-
-        # Step 6: Display results
+        # Display results
         print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"{Colors.BOLD}TEST RESULTS - CRIBL{Colors.END}")
         print(f"{Colors.BOLD}{'='*60}{Colors.END}")
         print(f"Test ID: {self.test_id}")
 
-        if success:
+        if event_success and raw_success:
             print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
             print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent")
             print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent")
-            print(f"  Total: {total_sent}/{total_expected} events sent")
-            print(f"  Found: {results.get('occurrences', 0)} references in logs")
-            print(f"  Log file: {results.get('log_file', 'N/A')}")
+            print(f"  Total: {total_sent}/{total_expected} events sent ({total_success_pct:.0f}%)")
             return True
         else:
-            print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠ TEST PARTIALLY SUCCESSFUL{Colors.END}")
-            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent")
-            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent")
-            print(f"  Total: {total_sent}/{total_expected} events sent")
-            print(f"  Found: {results.get('occurrences', 0)} references in logs")
-            print(f"  Log file: {results.get('log_file', 'N/A')}")
-            print(f"\n{Colors.YELLOW}Note: Events were sent successfully but verification incomplete{Colors.END}")
-            print(f"{Colors.YELLOW}{error}{Colors.END}")
+            print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
+            print(f"  EVENT endpoint: {event_sent}/{self.num_events} events sent" + (f" - {event_error}" if not event_success else ""))
+            print(f"  RAW endpoint: {raw_sent}/{self.num_events} events sent" + (f" - {raw_error}" if not raw_success else ""))
+            print(f"  Total: {total_sent}/{total_expected} events sent ({total_success_pct:.0f}%)")
             return False
 
 
 def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: Optional[str],
                           splunk_host: Optional[str], splunk_username: Optional[str],
                           splunk_token: Optional[str], splunk_password: Optional[str],
-                          cribl_http_url: Optional[str], cribl_api_url: Optional[str],
-                          cribl_client_id: Optional[str], cribl_client_secret: Optional[str]) -> Tuple[bool, Optional[str]]:
+                          cribl_http_url: Optional[str]) -> Tuple[bool, Optional[str]]:
     """
     Validate configuration based on test target.
     Returns (is_valid, error_message)
@@ -1269,12 +895,12 @@ def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: 
     errors = []
 
     # Validate target value
-    if test_target not in ['splunk', 'cribl', 'both']:
-        errors.append(f"Invalid TEST_TARGET: '{test_target}'. Must be 'splunk', 'cribl', or 'both'")
+    if test_target not in ['splunk', 'cribl', 'cribl_to_splunk']:
+        errors.append(f"Invalid TEST_TARGET: '{test_target}'. Must be 'splunk', 'cribl', or 'cribl_to_splunk'")
         return False, '\n'.join(errors)
 
     # Validate Splunk configuration if needed
-    if test_target in ['splunk', 'both']:
+    if test_target in ['splunk', 'cribl_to_splunk']:
         if not hec_url:
             errors.append("SPLUNK_HEC_URL not provided (required for Splunk testing)")
         if not hec_token:
@@ -1287,15 +913,9 @@ def validate_configuration(test_target: str, hec_url: Optional[str], hec_token: 
             errors.append("Either SPLUNK_TOKEN or SPLUNK_PASSWORD must be provided (required for Splunk testing)")
 
     # Validate Cribl configuration if needed
-    if test_target in ['cribl', 'both']:
+    if test_target in ['cribl', 'cribl_to_splunk']:
         if not cribl_http_url:
             errors.append("CRIBL_HTTP_URL not provided (required for Cribl testing)")
-        if not cribl_api_url:
-            errors.append("CRIBL_API_URL not provided (required for Cribl testing)")
-        if not cribl_client_id:
-            errors.append("CRIBL_CLIENT_ID not provided (required for Cribl testing)")
-        if not cribl_client_secret:
-            errors.append("CRIBL_CLIENT_SECRET not provided (required for Cribl testing)")
 
     if errors:
         return False, '\n'.join(errors)
@@ -1314,8 +934,8 @@ def main():
 
     # Target selection
     parser.add_argument('--target',
-                        choices=['splunk', 'cribl', 'both'],
-                        help='Target system to test: cribl, splunk, or both (overrides .env)')
+                        choices=['splunk', 'cribl', 'cribl_to_splunk'],
+                        help='Target system to test: splunk, cribl, or cribl_to_splunk (overrides .env)')
 
     # Splunk arguments
     parser.add_argument('--hec-url', help='Splunk HEC endpoint URL (overrides .env SPLUNK_HEC_URL)')
@@ -1331,16 +951,6 @@ def main():
                         help='Cribl HTTP Source endpoint URL (overrides .env CRIBL_HTTP_URL)')
     parser.add_argument('--cribl-http-token',
                         help='Cribl HEC token for HTTP Source (overrides .env CRIBL_HEC_TOKEN)')
-
-    # Cribl REST API arguments
-    parser.add_argument('--cribl-api-url',
-                        help='Cribl REST API base URL (overrides .env)')
-    parser.add_argument('--cribl-client-id',
-                        help='Cribl API client ID (overrides .env)')
-    parser.add_argument('--cribl-client-secret',
-                        help='Cribl API client secret (overrides .env)')
-    parser.add_argument('--cribl-worker-group',
-                        help='Cribl worker group to check logs (overrides .env)')
 
     # General arguments
     parser.add_argument('--num-events', type=int, help='Number of test events to send (default: 5)')
@@ -1366,20 +976,13 @@ def main():
     cribl_http_url = args.cribl_http_url or os.getenv('CRIBL_HTTP_URL')
     cribl_http_token = args.cribl_http_token or os.getenv('CRIBL_HEC_TOKEN') or os.getenv('CRIBL_HTTP_TOKEN')  # Backward compatibility
 
-    # Cribl REST API configuration
-    cribl_api_url = args.cribl_api_url or os.getenv('CRIBL_API_URL')
-    cribl_client_id = args.cribl_client_id or os.getenv('CRIBL_CLIENT_ID')
-    cribl_client_secret = args.cribl_client_secret or os.getenv('CRIBL_CLIENT_SECRET')
-    cribl_worker_group = args.cribl_worker_group or os.getenv('CRIBL_WORKER_GROUP', 'default')
-
     # General configuration
     num_events = args.num_events or int(os.getenv('NUM_EVENTS', '5'))
 
     # Validate configuration based on target
     is_valid, error_msg = validate_configuration(
         test_target, hec_url, hec_token, splunk_host, splunk_username,
-        splunk_token, splunk_password, cribl_http_url, cribl_api_url,
-        cribl_client_id, cribl_client_secret
+        splunk_token, splunk_password, cribl_http_url
     )
 
     if not is_valid:
@@ -1417,7 +1020,7 @@ def main():
         overall_success = overall_success and splunk_success
 
     # Test Cribl if requested
-    if test_target in ['cribl', 'both']:
+    if test_target == 'cribl':
         print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
         print(f"{Colors.BOLD}TESTING TARGET: CRIBL{Colors.END}")
         print(f"{Colors.BOLD}{'='*70}{Colors.END}")
@@ -1425,42 +1028,128 @@ def main():
         cribl_tester = CriblTester(
             http_url=cribl_http_url,
             http_token=cribl_http_token if cribl_http_token else None,
-            api_url=cribl_api_url,
-            client_id=cribl_client_id,
-            client_secret=cribl_client_secret,
-            worker_group=cribl_worker_group,
             num_events=num_events
         )
 
         cribl_success = cribl_tester.run_test()
         overall_success = overall_success and cribl_success
 
+    # Test Cribl to Splunk if requested
+    if test_target == 'cribl_to_splunk':
+        print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
+        print(f"{Colors.BOLD}TESTING TARGET: CRIBL TO SPLUNK{Colors.END}")
+        print(f"{Colors.BOLD}{'='*70}{Colors.END}")
+
+        # Create Cribl tester for sending
+        cribl_tester = CriblTester(
+            http_url=cribl_http_url,
+            http_token=cribl_http_token if cribl_http_token else None,
+            num_events=num_events
+        )
+
+        # Create Splunk tester for verification (reuse HECTester for search capability)
+        splunk_tester = HECTester(
+            hec_url=hec_url,
+            hec_token=hec_token,
+            splunk_host=splunk_host,
+            splunk_username=splunk_username,
+            splunk_password=splunk_password if splunk_password else None,
+            splunk_token=splunk_token if splunk_token else None,
+            default_index=default_index if default_index else None,
+            num_events=num_events
+        )
+
+        # Override the test_id so both use the same ID
+        shared_test_id = str(uuid.uuid4())
+        cribl_tester.test_id = shared_test_id
+        splunk_tester.test_id = shared_test_id
+
+        print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"{Colors.BOLD}Cribl to Splunk Test{Colors.END}")
+        print(f"{Colors.BOLD}{'='*60}{Colors.END}")
+        print(f"Test ID: {Colors.BOLD}{shared_test_id}{Colors.END}")
+
+        # Send to Cribl
+        print(f"\n{Colors.BOLD}Step 1: Sending events to Cribl{Colors.END}")
+        event_events = cribl_tester.generate_test_events("event")
+        event_success, event_error, event_sent = cribl_tester.send_events(event_events, cribl_tester.http_event_url, "event")
+
+        raw_events = cribl_tester.generate_test_events("raw")
+        raw_success, raw_error, raw_sent = cribl_tester.send_events(raw_events, cribl_tester.http_raw_url, "raw")
+
+        total_sent_cribl = event_sent + raw_sent
+        cribl_success = event_success and raw_success
+
+        # Search in Splunk
+        if cribl_success:
+            print(f"\n{Colors.BOLD}Step 2: Verifying events in Splunk{Colors.END}")
+            search_success, search_error, results = splunk_tester.search_events(args.wait_time)
+
+            if search_success:
+                # Get detailed event information
+                detail_success, detail_error, details_list = splunk_tester.get_event_details()
+
+                # Display results
+                print(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+                print(f"{Colors.BOLD}TEST RESULTS - CRIBL TO SPLUNK{Colors.END}")
+                print(f"{Colors.BOLD}{'='*60}{Colors.END}")
+                print(f"Test ID: {shared_test_id}")
+
+                # Count total events found
+                total_found = 0
+                if isinstance(details_list, list):
+                    for details in details_list:
+                        total_found += int(details.get('count', 0))
+                elif isinstance(details_list, dict):
+                    total_found = int(details_list.get('count', 0))
+
+                total_expected = num_events * 2  # Both endpoints
+                success_pct = (total_found / total_expected * 100) if total_expected > 0 else 0
+
+                if total_found == total_expected:
+                    print(f"\n{Colors.GREEN}{Colors.BOLD}✓ TEST PASSED{Colors.END}")
+                    print(f"  Sent to Cribl: {total_sent_cribl}/{total_expected} events")
+                    print(f"  Found in Splunk: {total_found}/{total_expected} events ({success_pct:.0f}%)")
+                    overall_success = True
+                else:
+                    print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
+                    print(f"  Sent to Cribl: {total_sent_cribl}/{total_expected} events")
+                    print(f"  Found in Splunk: {total_found}/{total_expected} events ({success_pct:.0f}%)")
+                    overall_success = False
+            else:
+                print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
+                print(f"  Sent to Cribl: {total_sent_cribl}/{num_events * 2} events")
+                print(f"  Search Error: {search_error}")
+                overall_success = False
+        else:
+            print(f"\n{Colors.RED}{Colors.BOLD}✗ TEST FAILED{Colors.END}")
+            print(f"  Failed to send events to Cribl")
+            if event_error:
+                print(f"  Event endpoint error: {event_error}")
+            if raw_error:
+                print(f"  Raw endpoint error: {raw_error}")
+            overall_success = False
+
     # Final summary
     print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
     print(f"{Colors.BOLD}FINAL TEST SUMMARY{Colors.END}")
     print(f"{Colors.BOLD}{'='*70}{Colors.END}")
 
-    if test_target == 'both':
-        if overall_success:
-            print(f"{Colors.GREEN}{Colors.BOLD}✓ ALL TESTS PASSED (Cribl + Splunk){Colors.END}")
-        else:
-            print(f"{Colors.RED}{Colors.BOLD}✗ SOME TESTS FAILED{Colors.END}")
-            if 'cribl_success' in locals():
-                status = Colors.GREEN + "PASSED" + Colors.END if cribl_success else Colors.RED + "FAILED" + Colors.END
-                print(f"  Cribl:  {status}")
-            if 'splunk_success' in locals():
-                status = Colors.GREEN + "PASSED" + Colors.END if splunk_success else Colors.RED + "FAILED" + Colors.END
-                print(f"  Splunk: {status}")
-    elif test_target == 'splunk':
+    if test_target == 'splunk':
         if overall_success:
             print(f"{Colors.GREEN}{Colors.BOLD}✓ SPLUNK TEST PASSED{Colors.END}")
         else:
             print(f"{Colors.RED}{Colors.BOLD}✗ SPLUNK TEST FAILED{Colors.END}")
-    else:  # cribl
+    elif test_target == 'cribl':
         if overall_success:
             print(f"{Colors.GREEN}{Colors.BOLD}✓ CRIBL TEST PASSED{Colors.END}")
         else:
             print(f"{Colors.RED}{Colors.BOLD}✗ CRIBL TEST FAILED{Colors.END}")
+    else:  # cribl_to_splunk
+        if overall_success:
+            print(f"{Colors.GREEN}{Colors.BOLD}✓ CRIBL TO SPLUNK TEST PASSED{Colors.END}")
+        else:
+            print(f"{Colors.RED}{Colors.BOLD}✗ CRIBL TO SPLUNK TEST FAILED{Colors.END}")
 
     sys.exit(0 if overall_success else 1)
 
