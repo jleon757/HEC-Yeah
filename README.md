@@ -1,6 +1,6 @@
 # HEC-Yeah
 
-A comprehensive testing tool for validating HTTP Event Collector (HEC) connectivity and event delivery to **Cribl**, **Splunk**, or both!  HEC-Yeah sends test events, verifies successful delivery, and provides detailed diagnostics.
+A comprehensive testing tool for validating HTTP Event Collector (HEC) connectivity and event delivery to **Cribl**, **Splunk**, or **Cribl→Splunk pipelines**!  HEC-Yeah sends test events, verifies successful delivery, and provides detailed diagnostics.
 
 ## What It Does
 
@@ -110,18 +110,14 @@ python hec_yeah.py
 
 #### Target Selection
 
-- **TEST_TARGET**: Which system(s) to test - `cribl`, `splunk`, or `both` (default: `splunk`)
+- **TEST_TARGET**: Which system(s) to test - `cribl`, `splunk`, or `cribl_to_splunk` (default: `splunk`)
 
-#### Cribl Configuration (Required if TEST_TARGET=cribl or both)
+#### Cribl Configuration (Required if TEST_TARGET=cribl or cribl_to_splunk)
 
 - **CRIBL_HTTP_URL**: Cribl HTTP Source endpoint URL (e.g., `http://cribl.example.com:10080/services/collector` or `https://<workspaceName>.<organizationId>.cribl.cloud:<port>/services/collector` for Cribl Cloud)
-- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication - this token is tested to verify it can send events to Cribl
-- **CRIBL_API_URL**: Cribl REST API base URL (e.g., `https://api.cribl.cloud` for Cribl Cloud or `https://cribl.example.com:9000/api/v1` for self-hosted)
-- **CRIBL_CLIENT_ID**: API client ID (generate in Cribl UI: Settings → API Credentials)
-- **CRIBL_CLIENT_SECRET**: API client secret
-- **CRIBL_WORKER_GROUP**: (Optional) Worker group to check logs (default: `default`)
+- **CRIBL_HEC_TOKEN**: (Optional) HEC token for HTTP Source authentication
 
-#### Splunk Configuration (Required if TEST_TARGET=splunk or both)
+#### Splunk Configuration (Required if TEST_TARGET=splunk or cribl_to_splunk)
 
 - **SPLUNK_HEC_URL**: Splunk HEC endpoint URL (e.g., `https://splunk.example.com:8088/services/collector`) - this token is tested for event ingestion
 - **SPLUNK_HEC_TOKEN**: HEC authentication token - this token is tested to verify it can send events to Splunk
@@ -135,19 +131,15 @@ python hec_yeah.py
 
 - **NUM_EVENTS**: (Optional) Number of test events to send (default: 5)
 
-### Generating Cribl API Credentials
-
-1. Log in to Cribl UI
-2. Navigate to **Settings → API Credentials**
-3. Click **"Create New"** credential
-4. Copy the client ID and secret
-5. Add to `.env` file as `CRIBL_CLIENT_ID` and `CRIBL_CLIENT_SECRET`
-
 ### Important Notes
 
 - **Splunk Authentication**: You must provide either `SPLUNK_TOKEN` or `SPLUNK_PASSWORD`. If both are provided, the tool will try token authentication first, then fall back to password authentication if needed.
 - **SAML/SSO Environments**: If your Splunk instance uses SAML or Single Sign-On (SSO) authentication, password authentication will NOT work. You MUST use a user token (`SPLUNK_TOKEN`) instead. Generate a token in Splunk: Settings → Tokens → Create New Token.
-- **Conditional Requirements**: The tool validates configuration based on `TEST_TARGET`. If testing only Splunk, Cribl parameters are not required, and vice versa.
+- **Splunk Management API Port**: The `SPLUNK_HTTP_URL` must include port **8089** (management API), not port 8088 (HEC). Example: `https://splunk.example.com:8089`
+- **Conditional Requirements**: The tool validates configuration based on `TEST_TARGET`:
+  - `splunk` mode: Only Splunk parameters required
+  - `cribl` mode: Only Cribl HTTP URL required (token optional)
+  - `cribl_to_splunk` mode: Both Cribl HTTP URL and Splunk parameters required
 - **Quotes in .env**: Use double quotes around values that contain special characters (e.g., `!@#$%^&*`)
 - **After editing .env**: You do NOT need to reactivate the virtual environment - just run `python hec_yeah.py` again. The tool reloads `.env` on each run.
 
